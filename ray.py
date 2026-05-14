@@ -46,12 +46,6 @@ st.markdown("""
     .triple-pct-r { font-size: 14px; font-weight: bold; color: #b71c1c; margin-top: 5px; }
     .triple-pct-g { font-size: 14px; font-weight: bold; color: #2e7d32; margin-top: 5px; }
     .triple-sub-gold { font-size: 12px; font-weight: bold; color: #7f8c8d; margin-top: 5px; }
-
-    .calc-box { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;}
-    .calc-title { color: #495057; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
-    .calc-result-profit { font-size: 24px; font-weight: bold; color: #d32f2f; margin-top: 10px;}
-    .calc-result-loss { font-size: 24px; font-weight: bold; color: #388e3c; margin-top: 10px;}
-    .calc-result-info { font-size: 14px; color: #6c757d; margin-top: 5px;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -694,40 +688,44 @@ if st.session_state.show_daily_price:
     wl_map = {item['symbol']: f"👀 {item['name']}" for item in st.session_state.my_data.get('watchlist', [])}
     all_symbols_map = {**port_map, **wl_map}
     current_symbols = list(all_symbols_map.keys())
+    
     if current_symbols and start_date <= end_date:
         try:
+            # 拔除 ffill() 假資料填補，維持最原始的資料真實性
             hist_data = yf.download(current_symbols, start=start_date, end=end_date + timedelta(days=1))['Close']
-            
-            # 先補滿缺失的資料 (避免 Yahoo 掉資料)
-            hist_data = hist_data.ffill().bfill() 
             
             if len(current_symbols) == 1: 
                 hist_data = hist_data.to_frame().rename(columns={current_symbols[0]: all_symbols_map[current_symbols[0]]})
             else: 
                 hist_data = hist_data.rename(columns=all_symbols_map)
                 
-            # 🔥 修正區塊：在日期還是正序的時候先算好 diff，並且固定成字串的日期 index
+            # 計算差值 (如果昨日是 NaN，今天就不會產生錯誤的差距，而會是 NaN，避免誤標顏色)
             diff_data = hist_data.diff()
+            
+            # 統一轉換時間格式字串
             str_index = hist_data.index.strftime('%Y/%m/%d')
             hist_data.index = str_index
             diff_data.index = str_index
             
-            # 分別按照字串日期進行「新到舊」排序後再轉置，這樣顏色標籤就會嚴格對齊正確的日子
-            hist_data = hist_data.sort_index(ascending=False).T
-            diff_data = diff_data.sort_index(ascending=False).T
+            # 分別轉置排序
+            display_hist = hist_data.sort_index(ascending=False).T
+            display_diff = diff_data.sort_index(ascending=False).T
             
             def color_prices(df_to_style):
                 css_df = pd.DataFrame('', index=df_to_style.index, columns=df_to_style.columns)
                 for col in df_to_style.columns:
                     ticker_name = df_to_style.index
                     for idx, ticker in enumerate(ticker_name):
-                        val_diff = diff_data.loc[ticker, col] if ticker in diff_data.index else 0
-                        # 嚴格依照要求：上漲顯示紅色、下跌趨勢顯示綠色
-                        if val_diff > 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #d32f2f; font-weight: bold;'
-                        elif val_diff < 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #388e3c; font-weight: bold;'
+                        # 嚴格判斷：只有在真正有算出差值的情況下，才給予紅綠顏色
+                        if ticker in diff_data.index:
+                            val_diff = display_diff.loc[ticker, col]
+                            if pd.notna(val_diff):
+                                if val_diff > 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #d32f2f; font-weight: bold;'
+                                elif val_diff < 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #388e3c; font-weight: bold;'
                 return css_df
                 
-            st.dataframe(hist_data.style.format("{:.2f}").apply(color_prices, axis=None), use_container_width=True)
+            # 使用 na_rep="-" 來優雅地顯示 Yahoo 缺失的資料，而非難看的 None 或亂塞的假價格
+            st.dataframe(display_hist.style.format("{:.2f}", na_rep="-").apply(color_prices, axis=None), use_container_width=True)
         except Exception as e: 
             st.info(f"暫時無法抓取歷史股價：{e}")
     st.write("---")
