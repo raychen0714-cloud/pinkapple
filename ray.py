@@ -179,30 +179,6 @@ def save_edits():
     st.session_state.my_data['etfs'] = temp_list
     save_to_json(st.session_state.my_data)
 
-def auto_fill_wl_name():
-    raw_sym = st.session_state.get('add_sym_wl', '')
-    clean_sym = raw_sym.strip().upper().replace(".TW", "")
-    if clean_sym: st.session_state.add_name_wl = ETF_NAME_DB.get(clean_sym, f"{clean_sym}")
-    else: st.session_state.add_name_wl = ""
-
-def add_new_wl():
-    raw_sym = st.session_state.get('add_sym_wl', '')
-    new_name = st.session_state.get('add_name_wl', '')
-    clean_symbol = raw_sym.strip().upper().replace(".TW", "")
-    if clean_symbol and new_name:
-        final_symbol = f"{clean_symbol}.TW"
-        if any(x['symbol'] == final_symbol for x in st.session_state.my_data['watchlist']):
-            st.warning("該標的已在自選名單中！")
-            return
-        st.session_state.my_data['watchlist'].append({"symbol": final_symbol, "name": new_name})
-        save_to_json(st.session_state.my_data)
-        st.session_state.add_sym_wl = ""; st.session_state.add_name_wl = ""
-
-def delete_wl(index):
-    if 0 <= index < len(st.session_state.my_data['watchlist']):
-        st.session_state.my_data['watchlist'].pop(index)
-        save_to_json(st.session_state.my_data)
-
 # 初始化按鈕狀態
 if 'show_calendar' not in st.session_state: st.session_state.show_calendar = False
 if 'show_div_db' not in st.session_state: st.session_state.show_div_db = False
@@ -224,7 +200,6 @@ def toggle_pledge(): st.session_state.show_pledge = not st.session_state.show_pl
 def fetch_taiwan_upcoming_dividends():
     tw_div_data = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
-    
     try:
         url_twse = "https://www.twse.com.tw/exchangeReport/TWT49U?response=json"
         res = requests.get(url_twse, headers=headers, timeout=5).json()
@@ -239,30 +214,10 @@ def fetch_taiwan_upcoming_dividends():
                         ex_date = f"{int(tw_year) + 1911}-{month.zfill(2)}-{day.zfill(2)}"
                         amount = 0.0
                         cash_div_str = str(row[7]).replace(',', '').strip()
-                        if cash_div_str and cash_div_str.replace('.', '', 1).isdigit():
-                            amount = float(cash_div_str)
+                        if cash_div_str and cash_div_str.replace('.', '', 1).isdigit(): amount = float(cash_div_str)
                         pay_date = (datetime.strptime(ex_date, '%Y-%m-%d') + timedelta(days=28)).strftime('%Y-%m-%d')
                         tw_div_data[symbol] = {"ex_date": ex_date, "pay_date": pay_date, "amount": amount}
     except Exception: pass
-
-    try:
-        url_tpex = "https://www.tpex.org.tw/web/stock/exright/preAnnounce/PrePost_result.php?l=zh-tw&o=json"
-        res_tpex = requests.get(url_tpex, headers=headers, timeout=5).json()
-        if 'aaData' in res_tpex:
-            for row in res_tpex['aaData']:
-                if len(row) >= 6:
-                    date_str, symbol = str(row[0]), str(row[1]).strip()
-                    parts = date_str.split('/')
-                    if len(parts) == 3:
-                        ex_date = f"{int(parts[0]) + 1911}-{parts[1].zfill(2)}-{parts[2].zfill(2)}"
-                        amount = 0.0
-                        cash_div_str = str(row[5]).replace(',', '').strip()
-                        if cash_div_str and cash_div_str.replace('.', '', 1).isdigit():
-                            amount = float(cash_div_str)
-                        pay_date = (datetime.strptime(ex_date, '%Y-%m-%d') + timedelta(days=28)).strftime('%Y-%m-%d')
-                        tw_div_data[symbol] = {"ex_date": ex_date, "pay_date": pay_date, "amount": amount}
-    except Exception: pass
-        
     return tw_div_data
 
 @st.cache_data(ttl=86400) 
@@ -636,15 +591,11 @@ if st.session_state.show_daily_price:
             display_hist = hist_data.sort_index(ascending=False).T
             display_diff = diff_data.sort_index(ascending=False).T
             
-            # 修正：針對「已經轉置後」的 DataFrame 結構 (列是ETF，行是日期) 給予顏色判定
             def color_prices(df_to_style):
                 css_df = pd.DataFrame('', index=df_to_style.index, columns=df_to_style.columns)
-                # 直接掃描每一個座標
                 for c in df_to_style.columns:
                     for r in df_to_style.index:
-                        # 從剛算好的 display_diff 中拿出對應座標的漲跌差值
                         val_diff = display_diff.loc[r, c]
-                        # 只有當真的有數字時才標顏色
                         if pd.notna(val_diff):
                             if val_diff > 0:
                                 css_df.loc[r, c] = 'color: #d32f2f; font-weight: bold;'
@@ -652,7 +603,7 @@ if st.session_state.show_daily_price:
                                 css_df.loc[r, c] = 'color: #388e3c; font-weight: bold;'
                 return css_df
 
-            # 修正 None 顯示：設定客製化的 formatter 來優雅地顯示 "-"
+            # 設定客製化的 formatter 來優雅地顯示 "-"
             formatter_dict = {col: lambda x: f"{x:.2f}" if pd.notna(x) else "-" for col in display_hist.columns}
                 
             st.dataframe(display_hist.style.format(formatter_dict).apply(color_prices, axis=None), use_container_width=True)
@@ -705,12 +656,23 @@ if st.session_state.show_pledge:
         st.data_editor(pd.DataFrame(pledge_df_list), use_container_width=True, hide_index=True)
     st.write("---")
 
-# 底部管理區
+# 底部管理區與報價更新控制
 bot_c1, bot_c2 = st.columns([3, 7])
 with bot_c1:
-    if st.button("🔄 手動重新整理股價", use_container_width=True):
+    st.markdown("#### 🔄 報價更新控制")
+    # ✅ 加回 ON/OFF 自動更新開關 (每 5 秒)
+    auto_refresh = st.toggle("⏱️ 自動更新 (每 5 秒)", value=False)
+    if auto_refresh:
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=5000, key="auto_refresh_timer")
+        except ImportError:
+            st.warning("⚠️ 找不到自動更新套件，請在終端機輸入：pip install streamlit-autorefresh")
+            
+    if st.button("🔄 手動強制重新整理", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
 with bot_c2:
     with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=True):
         st.text_input("輸入代碼 (不需手打 .TW)", key="add_sym_bot", on_change=auto_fill_etf_name)
