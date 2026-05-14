@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import json
 import os
+import numpy as np
 from datetime import datetime, timedelta
 import altair as alt
 import requests
@@ -202,39 +203,6 @@ def delete_wl(index):
         st.session_state.my_data['watchlist'].pop(index)
         save_to_json(st.session_state.my_data)
 
-def execute_trade():
-    trade_etf_name = st.session_state.calc_selected_etf
-    trade_type = st.session_state.calc_trade_type
-    trade_shares = st.session_state.calc_trade_shares
-    
-    for i, item in enumerate(st.session_state.my_data['etfs']):
-        if item['name'] == trade_etf_name:
-            current_holdings = item['holdings']
-            current_cost = item['cost']
-            current_price = df[df['名稱'] == trade_etf_name].iloc[0]['現價']
-            
-            if trade_type == "賣出 (計算已實現損益)":
-                actual_sell_shares = min(trade_shares, current_holdings)
-                new_holdings = current_holdings - actual_sell_shares
-                if new_holdings <= 0:
-                    st.session_state.my_data['etfs'].pop(i)
-                    st.success(f"已全數賣出 {trade_etf_name}，並從庫存中移除！")
-                else:
-                    item['holdings'] = new_holdings
-                    item['div_shares'] = min(item.get('div_shares', current_holdings), new_holdings)
-                    st.success(f"成功賣出 {actual_sell_shares} 張 {trade_etf_name}！庫存剩餘 {new_holdings} 張。")
-            elif trade_type == "買進 (計算買入成本與新均價)":
-                buy_cost_total = current_price * trade_shares * 1000
-                new_total_shares = current_holdings + trade_shares
-                new_total_cost_val = (current_cost * current_holdings * 1000) + buy_cost_total
-                new_avg_cost = new_total_cost_val / (new_total_shares * 1000) if new_total_shares > 0 else 0
-                item['holdings'] = new_total_shares
-                item['cost'] = round(new_avg_cost, 2)
-                item['div_shares'] = new_total_shares
-                st.success(f"成功買進 {trade_shares} 張 {trade_etf_name}！最新均價更新為 ${item['cost']}。")
-            save_to_json(st.session_state.my_data)
-            break
-
 # 初始化按鈕狀態
 if 'show_calendar' not in st.session_state: st.session_state.show_calendar = False
 if 'show_div_db' not in st.session_state: st.session_state.show_div_db = False
@@ -363,49 +331,6 @@ def get_div_data(symbol, custom_div_info=None):
                     if not filled: fill_status = f"未填息 ({t_days}天)"
     except Exception: pass
     return is_announced, div_amount, ex_date, pay_date, fill_status, status_msg
-
-@st.cache_data(ttl=10)
-def fetch_watchlist_data(wl_list):
-    if not wl_list: return pd.DataFrame()
-    results = []
-    for item in wl_list:
-        try:
-            tk = yf.Ticker(item['symbol'])
-            hist = tk.history(period="2d")
-            if hist.empty: continue
-            rt_curr = tk.fast_info.get('lastPrice')
-            curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
-            rt_prev = tk.fast_info.get('previousClose')
-            prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
-            diff = curr_p - prev_close
-            pct = (diff / prev_close * 100) if prev_close else 0
-            status_light = "🔴" if diff > 0 else "🟢" if diff < 0 else "⚪"
-            results.append({
-                "代號": item['symbol'].replace('.TW', ''), "名稱": item['name'],
-                "現價": round(curr_p, 2), "漲跌": round(diff, 2), "漲跌幅": f"{pct:+.2f}%", "狀態": status_light
-            })
-        except Exception: continue
-    return pd.DataFrame(results)
-
-@st.cache_data(ttl=43200)
-def fetch_watchlist_dividend(wl_list, custom_divs):
-    if not wl_list: return pd.DataFrame()
-    results = []
-    for item in wl_list:
-        sym = item['symbol']
-        try:
-            cap_raw = get_fund_size(sym)
-            cap_str = f"{cap_raw / 100000000:.2f} 億" if cap_raw else "系統無資料"
-            is_announced, div_amount, ex_date, pay_date, fill_status, status_msg = get_div_data(sym, custom_divs.get(sym))
-            months = DIVIDEND_SCHEDULE.get(sym, [])
-            freq = "月配息" if len(months)==12 else "季配息" if len(months)==4 else "半年配" if len(months)==2 else "年配息" if len(months)==1 else "未知"
-            results.append({
-                "類別": "👀 自選", "ETF 名稱": item['name'], "基金規模": cap_str,  
-                "配息頻率": freq, "配息月份": "、".join(map(str, months)) + " 月" if months else "未設定",
-                "狀態": status_msg, "除息日": ex_date, "發放日": pay_date, "每股金額": f"${div_amount:.3f}", "最新填息紀錄": fill_status
-            })
-        except Exception: continue
-    return pd.DataFrame(results)
 
 @st.cache_data(ttl=10)
 def fetch_data(etf_list, custom_divs):
@@ -691,7 +616,7 @@ if st.session_state.show_daily_price:
     
     if current_symbols and start_date <= end_date:
         try:
-            # 拔除 ffill() 假資料填補，維持最原始的資料真實性
+            # 抓取股價 (不補值以維持真實性)
             hist_data = yf.download(current_symbols, start=start_date, end=end_date + timedelta(days=1))['Close']
             
             if len(current_symbols) == 1: 
@@ -699,7 +624,7 @@ if st.session_state.show_daily_price:
             else: 
                 hist_data = hist_data.rename(columns=all_symbols_map)
                 
-            # 計算差值 (如果昨日是 NaN，今天就不會產生錯誤的差距，而會是 NaN，避免誤標顏色)
+            # 計算差值
             diff_data = hist_data.diff()
             
             # 統一轉換時間格式字串
@@ -711,21 +636,26 @@ if st.session_state.show_daily_price:
             display_hist = hist_data.sort_index(ascending=False).T
             display_diff = diff_data.sort_index(ascending=False).T
             
+            # 修正：針對「已經轉置後」的 DataFrame 結構 (列是ETF，行是日期) 給予顏色判定
             def color_prices(df_to_style):
                 css_df = pd.DataFrame('', index=df_to_style.index, columns=df_to_style.columns)
-                for col in df_to_style.columns:
-                    ticker_name = df_to_style.index
-                    for idx, ticker in enumerate(ticker_name):
-                        # 嚴格判斷：只有在真正有算出差值的情況下，才給予紅綠顏色
-                        if ticker in diff_data.index:
-                            val_diff = display_diff.loc[ticker, col]
-                            if pd.notna(val_diff):
-                                if val_diff > 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #d32f2f; font-weight: bold;'
-                                elif val_diff < 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #388e3c; font-weight: bold;'
+                # 直接掃描每一個座標
+                for c in df_to_style.columns:
+                    for r in df_to_style.index:
+                        # 從剛算好的 display_diff 中拿出對應座標的漲跌差值
+                        val_diff = display_diff.loc[r, c]
+                        # 只有當真的有數字時才標顏色
+                        if pd.notna(val_diff):
+                            if val_diff > 0:
+                                css_df.loc[r, c] = 'color: #d32f2f; font-weight: bold;'
+                            elif val_diff < 0:
+                                css_df.loc[r, c] = 'color: #388e3c; font-weight: bold;'
                 return css_df
+
+            # 修正 None 顯示：設定客製化的 formatter 來優雅地顯示 "-"
+            formatter_dict = {col: lambda x: f"{x:.2f}" if pd.notna(x) else "-" for col in display_hist.columns}
                 
-            # 使用 na_rep="-" 來優雅地顯示 Yahoo 缺失的資料，而非難看的 None 或亂塞的假價格
-            st.dataframe(display_hist.style.format("{:.2f}", na_rep="-").apply(color_prices, axis=None), use_container_width=True)
+            st.dataframe(display_hist.style.format(formatter_dict).apply(color_prices, axis=None), use_container_width=True)
         except Exception as e: 
             st.info(f"暫時無法抓取歷史股價：{e}")
     st.write("---")
