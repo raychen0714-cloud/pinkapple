@@ -718,7 +718,20 @@ if st.session_state.show_tech:
 
         st.write("")
         st.markdown("#### 📊 詳細持股清單與內扣費率")
-        st.dataframe(df.style.format({"現價":"{:.2f}", "均價":"{:.2f}", "市值":"{:,.0f}", "損益":"{:,.0f}"}), use_container_width=True, hide_index=True)
+        
+        # 🔥 將詳細持股清單的所有數字強制格式化為小數點後 3 位
+        format_dict = {
+            "現價": "{:.3f}", 
+            "均價": "{:.3f}", 
+            "張數": "{:.3f}", 
+            "市值": "{:,.3f}", 
+            "損益": "{:,.3f}", 
+            "報酬率": "{:.3f}", 
+            "參與配息張數": "{:.3f}", 
+            "單次預估領息": "{:,.3f}", 
+            "每股配息": "{:.3f}"
+        }
+        st.dataframe(df.style.format(format_dict), use_container_width=True, hide_index=True)
     else:
         st.markdown("#### 📡 庫存價格區間監控")
         st.info("目前無庫存標的。")
@@ -996,54 +1009,3 @@ with bot_c2:
                     with col_e3: st.number_input("參與配息張數", value=float(item.get('div_shares', item['holdings'])), step=1.0, key=f"edit_ds_{i}")
                     st.button(f"🗑️ 刪除 {item['name']}", key=f"del_{i}", on_click=delete_etf, args=(i,), use_container_width=True)
             st.button("💾 儲存所有修改", use_container_width=True, type="primary", on_click=save_edits)
-
-st.write("---")
-st.markdown("### 📈 持股歷史累積漲幅趨勢 (%)")
-st.caption("💡 將第一天的價格設為基準點 (0%)，藉此觀察比較這段期間內各標的的實際漲跌幅績效。")
-
-current_etfs = [item['symbol'] for item in st.session_state.my_data.get('etfs', [])]
-
-if current_etfs:
-    col_chart1, col_chart2 = st.columns(2)
-    with col_chart1: start_date_chart = st.date_input("選擇圖表開始日期", datetime.today() - timedelta(days=30), key="chart_start")
-    with col_chart2: end_date_chart = st.date_input("選擇圖表結束日期", datetime.today(), key="chart_end")
-    
-    if start_date_chart <= end_date_chart:
-        with st.spinner("正在計算並繪製歷史漲幅趨勢..."):
-            try:
-                price_history = yf.download(current_etfs, start=start_date_chart, end=end_date_chart + timedelta(days=1))['Close']
-                if not price_history.empty:
-                    if len(current_etfs) == 1:
-                        price_history = price_history.to_frame()
-                        price_history.columns = [st.session_state.my_data['etfs'][0]['name']]
-                    else:
-                        name_map = {item['symbol']: item['name'] for item in st.session_state.my_data['etfs']}
-                        price_history = price_history.rename(columns=name_map)
-                    
-                    # 🔥 計算累積漲幅百分比 (將第一筆資料當作基準 0%)
-                    pct_history = (price_history / price_history.iloc[0] - 1) * 100
-                    
-                    df_chart = pct_history.reset_index()
-                    date_col = df_chart.columns[0]
-                    df_melted = df_chart.melt(id_vars=[date_col], var_name='ETF', value_name='漲跌幅 (%)')
-
-                    chart = alt.Chart(df_melted).mark_line().encode(
-                        x=alt.X(f'{date_col}:T', axis=alt.Axis(format='%m/%d', title=None, grid=False)),
-                        y=alt.Y('漲跌幅 (%):Q', axis=alt.Axis(title="累積漲幅 (%)", labelFontSize=10, gridColor='#f0f2f6')),
-                        color=alt.Color('ETF:N', legend=alt.Legend(title=None, orient="bottom")),
-                        tooltip=[
-                            alt.Tooltip(f'{date_col}:T', format='%Y/%m/%d', title='日期'),
-                            alt.Tooltip('ETF:N', title='標的'),
-                            alt.Tooltip('漲跌幅 (%):Q', format='+.2f', title='累積漲幅 (%)')
-                        ]
-                    ).properties(height=450).interactive()
-
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.warning("⚠️ 所選的日期區間內沒有交易資料 (可能皆為假日)，請重新選擇。")
-            except Exception as e:
-                st.error(f"圖表產生失敗：{e}")
-    else:
-        st.error("❌ 圖表開始日期不能晚於結束日期！")
-else:
-    st.info("目前庫存中沒有標的。請由上方「標的管理」面板新增您的愛股！")
