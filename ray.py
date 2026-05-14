@@ -12,24 +12,6 @@ import time  # 引入原生時間套件，處理自動更新
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide", page_icon="📈")
 
-# --- 🎯 絕對不會漏看的側邊欄 (Sidebar) 控制區 ---
-st.sidebar.markdown("## ⚙️ 系統控制中心")
-st.sidebar.markdown("---")
-st.sidebar.markdown("#### 🔄 報價更新設定")
-
-# 改用最傳統、全版本支援的 checkbox，並固定在側邊欄
-auto_refresh = st.sidebar.checkbox("⏱️ 開啟 5 秒自動更新", value=False, key="auto_refresh_toggle")
-
-if st.sidebar.button("🔄 手動強制重新整理", use_container_width=True):
-    st.cache_data.clear()
-    try:
-        st.rerun()
-    except AttributeError:
-        st.experimental_rerun() # 兼容舊版 Streamlit
-
-st.sidebar.markdown("---")
-st.sidebar.info("溫馨提示：\n勾選上方自動更新後，網頁會每 5 秒自動重整一次以抓取最新股價。")
-
 # 全局提示訊息狀態
 if 'update_success' in st.session_state and st.session_state.update_success:
     st.toast(st.session_state.update_success, icon="✅")
@@ -501,7 +483,22 @@ with cols_btn_r2[0]: st.button(b6_lbl, on_click=toggle_holdings, type=b6_typ, us
 with cols_btn_r2[1]: st.button(b7_lbl, on_click=toggle_constituents, type=b7_typ, use_container_width=True) 
 with cols_btn_r2[2]: st.button(b8_lbl, on_click=toggle_daily_price, type=b8_typ, use_container_width=True) 
 
-with cols_btn_r3[0]: st.button(b9_lbl, on_click=toggle_pledge, type=b9_typ, use_container_width=True) 
+# --- 修改這裡：把更新控制功能塞進這排 ---
+with cols_btn_r3[0]: 
+    st.button(b9_lbl, on_click=toggle_pledge, type=b9_typ, use_container_width=True) 
+
+with cols_btn_r3[1]: 
+    # 正是你畫圈的位子！使用原生 Checkbox 最穩定
+    st.checkbox("⏱️ 5秒自動更新", key="auto_refresh_toggle")
+
+with cols_btn_r3[2]:
+    # 手動重整按鈕移來這，對齊滿版
+    if st.button("🔄 手動重整股價", use_container_width=True):
+        st.cache_data.clear()
+        try:
+            st.rerun()
+        except AttributeError:
+            st.experimental_rerun()
 
 st.write("---")
 
