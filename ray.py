@@ -58,7 +58,6 @@ st.markdown("""
 # --- 2. 系統設定與資料庫 ---
 SETTINGS_FILE = 'settings.json'
 
-# 🔥 補齊中信 00891 資料
 ETF_FULL_DATABASE = {
     "0050": ["元大台灣50", [1, 7], "0.32%", "0.035%"],
     "0056": ["元大台灣高股息", [1, 4, 7, 10], "0.3%", "0.035%"],
@@ -471,8 +470,6 @@ def fetch_data(etf_list, custom_divs):
 
             is_announced, div_amount, ex_date, pay_date, fill_status, status_msg = get_div_data(item['symbol'], custom_divs.get(item['symbol']))
             
-            # 🔥 配息月份判斷優化 (修正中信配息月份沒出來的問題)
-            # 先檢查資料庫預設值，若無則嘗試從代號判斷
             clean_sym_only = item['symbol'].replace('.TW', '')
             months_to_pay = DIVIDEND_SCHEDULE.get(item['symbol'], [])
             if not months_to_pay and clean_sym_only in ETF_FULL_DATABASE:
@@ -680,7 +677,6 @@ if st.session_state.show_tech:
         try: styled_df_tech = df_tech_display.style.map(color_profit_loss, subset=['今日損益', '今日漲跌幅']).map(color_months, subset=['配息月份'])
         except: styled_df_tech = df_tech_display.style.applymap(color_profit_loss, subset=['今日損益', '今日漲跌幅']).applymap(color_months, subset=['配息月份'])
 
-        # 🔥 🔥 🔥 修正：股票張數改為小數點 3 位
         st.dataframe(styled_df_tech, column_config={"現價": st.column_config.NumberColumn("現價", format="%.2f"), "股票張數": st.column_config.NumberColumn("股票張數", format="%.3f")}, use_container_width=True, hide_index=True)
 
         st.write("")
@@ -702,16 +698,23 @@ if st.session_state.show_daily_price:
         try:
             hist_data = yf.download(current_symbols, start=start_date, end=end_date + timedelta(days=1))['Close']
             
-            # 🔥 🔥 🔥 修正：解決 5/13 等 None 的問題 (加入自動補值邏輯)
-            hist_data = hist_data.ffill().bfill() # 先用前一筆補，再用後一筆補
+            # 先補滿缺失的資料 (避免 Yahoo 掉資料)
+            hist_data = hist_data.ffill().bfill() 
             
-            if len(current_symbols) == 1: hist_data = hist_data.to_frame().rename(columns={current_symbols[0]: all_symbols_map[current_symbols[0]]})
-            else: hist_data = hist_data.rename(columns=all_symbols_map)
+            if len(current_symbols) == 1: 
+                hist_data = hist_data.to_frame().rename(columns={current_symbols[0]: all_symbols_map[current_symbols[0]]})
+            else: 
+                hist_data = hist_data.rename(columns=all_symbols_map)
+                
+            # 🔥 修正區塊：在日期還是正序的時候先算好 diff，並且固定成字串的日期 index
             diff_data = hist_data.diff()
-            hist_data.index = hist_data.index.strftime('%Y/%m/%d')
+            str_index = hist_data.index.strftime('%Y/%m/%d')
+            hist_data.index = str_index
+            diff_data.index = str_index
+            
+            # 分別按照字串日期進行「新到舊」排序後再轉置，這樣顏色標籤就會嚴格對齊正確的日子
             hist_data = hist_data.sort_index(ascending=False).T
-            diff_data.index = hist_data.columns
-            diff_data = diff_data.T
+            diff_data = diff_data.sort_index(ascending=False).T
             
             def color_prices(df_to_style):
                 css_df = pd.DataFrame('', index=df_to_style.index, columns=df_to_style.columns)
@@ -719,11 +722,14 @@ if st.session_state.show_daily_price:
                     ticker_name = df_to_style.index
                     for idx, ticker in enumerate(ticker_name):
                         val_diff = diff_data.loc[ticker, col] if ticker in diff_data.index else 0
+                        # 嚴格依照要求：上漲顯示紅色、下跌趨勢顯示綠色
                         if val_diff > 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #d32f2f; font-weight: bold;'
                         elif val_diff < 0: css_df.iloc[idx, css_df.columns.get_loc(col)] = 'color: #388e3c; font-weight: bold;'
                 return css_df
+                
             st.dataframe(hist_data.style.format("{:.2f}").apply(color_prices, axis=None), use_container_width=True)
-        except: st.info("暫時無法抓取歷史股價。")
+        except Exception as e: 
+            st.info(f"暫時無法抓取歷史股價：{e}")
     st.write("---")
 
 if st.session_state.show_holdings:
