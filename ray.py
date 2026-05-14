@@ -7,9 +7,10 @@ import numpy as np
 from datetime import datetime, timedelta
 import altair as alt
 import requests
+import time  # 引入原生時間套件，處理自動更新
 
 # --- 1. 網頁基礎設定 ---
-st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
+st.set_page_config(page_title="ETF 投資戰情室", layout="wide", page_icon="📈")
 
 # 全局提示訊息狀態
 if 'update_success' in st.session_state and st.session_state.update_success:
@@ -49,6 +50,15 @@ st.markdown("""
     .triple-sub-gold { font-size: 12px; font-weight: bold; color: #7f8c8d; margin-top: 5px; }
     </style>
     """, unsafe_allow_html=True)
+
+# --- 🎯 頂部控制列 (保證一定看得到開關) ---
+top_col1, top_col2 = st.columns([8, 2])
+with top_col1:
+    st.markdown("### 📈 ETF 投資戰情室")
+with top_col2:
+    st.write("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+    # 將開關放在最上面！
+    auto_refresh = st.toggle("⏱️ 5秒自動更新 (ON/OFF)", key="auto_refresh_toggle")
 
 # --- 2. 系統設定與資料庫 ---
 SETTINGS_FILE = 'settings.json'
@@ -196,7 +206,7 @@ def toggle_constituents(): st.session_state.show_constituents = not st.session_s
 def toggle_daily_price(): st.session_state.show_daily_price = not st.session_state.show_daily_price 
 def toggle_pledge(): st.session_state.show_pledge = not st.session_state.show_pledge 
 
-@st.cache_data(ttl=10800) 
+@st.cache_data(ttl=10) 
 def fetch_taiwan_upcoming_dividends():
     tw_div_data = {}
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -659,17 +669,8 @@ if st.session_state.show_pledge:
 # 底部管理區與報價更新控制
 bot_c1, bot_c2 = st.columns([3, 7])
 with bot_c1:
-    st.markdown("#### 🔄 報價更新控制")
-    # ✅ 加回 ON/OFF 自動更新開關 (每 5 秒)
-    auto_refresh = st.toggle("⏱️ 自動更新 (每 5 秒)", value=False)
-    if auto_refresh:
-        try:
-            from streamlit_autorefresh import st_autorefresh
-            st_autorefresh(interval=5000, key="auto_refresh_timer")
-        except ImportError:
-            st.warning("⚠️ 找不到自動更新套件，請在終端機輸入：pip install streamlit-autorefresh")
-            
-    if st.button("🔄 手動強制重新整理", use_container_width=True):
+    st.markdown("#### 🔄 手動更新")
+    if st.button("🔄 強制重新整理股價", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -684,3 +685,8 @@ with bot_c2:
                     st.number_input("張數", value=float(item['holdings']), key=f"edit_h_{i}", step=0.001, format="%.3f")
                     st.button(f"🗑️ 刪除", key=f"del_{i}", on_click=delete_etf, args=(i,))
             st.button("💾 儲存修改", use_container_width=True, type="primary", on_click=save_edits)
+
+# --- 原生自動更新邏輯 (放在程式最底部) ---
+if st.session_state.get("auto_refresh_toggle", False):
+    time.sleep(5)
+    st.rerun()
