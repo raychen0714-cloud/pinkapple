@@ -12,6 +12,24 @@ import time  # 引入原生時間套件，處理自動更新
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide", page_icon="📈")
 
+# --- 🎯 絕對不會漏看的側邊欄 (Sidebar) 控制區 ---
+st.sidebar.markdown("## ⚙️ 系統控制中心")
+st.sidebar.markdown("---")
+st.sidebar.markdown("#### 🔄 報價更新設定")
+
+# 改用最傳統、全版本支援的 checkbox，並固定在側邊欄
+auto_refresh = st.sidebar.checkbox("⏱️ 開啟 5 秒自動更新", value=False, key="auto_refresh_toggle")
+
+if st.sidebar.button("🔄 手動強制重新整理", use_container_width=True):
+    st.cache_data.clear()
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun() # 兼容舊版 Streamlit
+
+st.sidebar.markdown("---")
+st.sidebar.info("溫馨提示：\n勾選上方自動更新後，網頁會每 5 秒自動重整一次以抓取最新股價。")
+
 # 全局提示訊息狀態
 if 'update_success' in st.session_state and st.session_state.update_success:
     st.toast(st.session_state.update_success, icon="✅")
@@ -51,14 +69,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 🎯 頂部控制列 (保證一定看得到開關) ---
-top_col1, top_col2 = st.columns([8, 2])
-with top_col1:
-    st.markdown("### 📈 ETF 投資戰情室")
-with top_col2:
-    st.write("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
-    # 將開關放在最上面！
-    auto_refresh = st.toggle("⏱️ 5秒自動更新 (ON/OFF)", key="auto_refresh_toggle")
+st.markdown("### 📈 ETF 投資戰情室")
 
 # --- 2. 系統設定與資料庫 ---
 SETTINGS_FILE = 'settings.json'
@@ -581,7 +592,6 @@ if st.session_state.show_daily_price:
     
     if current_symbols and start_date <= end_date:
         try:
-            # 抓取股價 (不補值以維持真實性)
             hist_data = yf.download(current_symbols, start=start_date, end=end_date + timedelta(days=1))['Close']
             
             if len(current_symbols) == 1: 
@@ -589,15 +599,12 @@ if st.session_state.show_daily_price:
             else: 
                 hist_data = hist_data.rename(columns=all_symbols_map)
                 
-            # 計算差值
             diff_data = hist_data.diff()
             
-            # 統一轉換時間格式字串
             str_index = hist_data.index.strftime('%Y/%m/%d')
             hist_data.index = str_index
             diff_data.index = str_index
             
-            # 分別轉置排序
             display_hist = hist_data.sort_index(ascending=False).T
             display_diff = diff_data.sort_index(ascending=False).T
             
@@ -613,7 +620,6 @@ if st.session_state.show_daily_price:
                                 css_df.loc[r, c] = 'color: #388e3c; font-weight: bold;'
                 return css_df
 
-            # 設定客製化的 formatter 來優雅地顯示 "-"
             formatter_dict = {col: lambda x: f"{x:.2f}" if pd.notna(x) else "-" for col in display_hist.columns}
                 
             st.dataframe(display_hist.style.format(formatter_dict).apply(color_prices, axis=None), use_container_width=True)
@@ -666,27 +672,22 @@ if st.session_state.show_pledge:
         st.data_editor(pd.DataFrame(pledge_df_list), use_container_width=True, hide_index=True)
     st.write("---")
 
-# 底部管理區與報價更新控制
-bot_c1, bot_c2 = st.columns([3, 7])
-with bot_c1:
-    st.markdown("#### 🔄 手動更新")
-    if st.button("🔄 強制重新整理股價", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+# 底部管理區
+with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=True):
+    st.text_input("輸入代碼 (不需手打 .TW)", key="add_sym_bot", on_change=auto_fill_etf_name)
+    st.text_input("自定義名稱", key="add_name_bot")
+    st.button("確認新增庫存", use_container_width=True, on_click=add_new_etf_bot)
+    if st.session_state.my_data['etfs']:
+        for i, item in enumerate(st.session_state.my_data['etfs']):
+            with st.expander(f"📍 {item['name']}"):
+                st.number_input("張數", value=float(item['holdings']), key=f"edit_h_{i}", step=0.001, format="%.3f")
+                st.button(f"🗑️ 刪除", key=f"del_{i}", on_click=delete_etf, args=(i,))
+        st.button("💾 儲存修改", use_container_width=True, type="primary", on_click=save_edits)
 
-with bot_c2:
-    with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=True):
-        st.text_input("輸入代碼 (不需手打 .TW)", key="add_sym_bot", on_change=auto_fill_etf_name)
-        st.text_input("自定義名稱", key="add_name_bot")
-        st.button("確認新增庫存", use_container_width=True, on_click=add_new_etf_bot)
-        if st.session_state.my_data['etfs']:
-            for i, item in enumerate(st.session_state.my_data['etfs']):
-                with st.expander(f"📍 {item['name']}"):
-                    st.number_input("張數", value=float(item['holdings']), key=f"edit_h_{i}", step=0.001, format="%.3f")
-                    st.button(f"🗑️ 刪除", key=f"del_{i}", on_click=delete_etf, args=(i,))
-            st.button("💾 儲存修改", use_container_width=True, type="primary", on_click=save_edits)
-
-# --- 原生自動更新邏輯 (放在程式最底部) ---
+# --- 原生自動更新邏輯 (放在程式最底部執行) ---
 if st.session_state.get("auto_refresh_toggle", False):
     time.sleep(5)
-    st.rerun()
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
