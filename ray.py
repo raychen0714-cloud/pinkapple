@@ -890,16 +890,36 @@ if st.session_state.show_tech:
     if not df.empty:
         st.markdown("#### 📡 庫存即時股價監控")
         
-        def color_profit_loss(val):
-            if isinstance(val, str):
-                if val.startswith('+'): return 'color: #d32f2f; font-weight: bold;' 
-                elif val.startswith('-'): return 'color: #388e3c; font-weight: bold;' 
-            return ''
+        # 💡 【真正的大魔王修復】：用 apply(axis=1) 掃描表格每一列，讓現價跟均價對決！
+        def style_tech_dataframe(row):
+            styles = [''] * len(row)
+            
+            # 1. 保留原本：今日損益、漲跌的字串顏色 (+紅 / -綠)
+            for i, col in enumerate(row.index):
+                val = row[col]
+                if isinstance(val, str):
+                    if val.startswith('+'):
+                        styles[i] = 'color: #d32f2f; font-weight: bold;'
+                    elif val.startswith('-'):
+                        styles[i] = 'color: #388e3c; font-weight: bold;'
+            
+            # 2. ✨ 全新關鍵：精準抓出現價與均價比對 (現價 >= 均價亮紅，現價 < 均價亮綠)
+            try:
+                price_idx = row.index.get_loc('現價')
+                curr_price = float(row['現價'])
+                avg_cost = float(row['均價'])
+                
+                if curr_price >= avg_cost:
+                    styles[price_idx] = 'color: #d32f2f; font-weight: bold;'  # 紅色
+                else:
+                    styles[price_idx] = 'color: #388e3c; font-weight: bold;'  # 綠色
+            except:
+                pass
+                
+            return styles
 
-        try:
-            styled_df_tech = df_tech.style.map(color_profit_loss, subset=['今日損益', '今日漲跌(點)', '今日漲跌幅'])
-        except AttributeError:
-            styled_df_tech = df_tech.style.applymap(color_profit_loss, subset=['今日損益', '今日漲跌(點)', '今日漲跌幅'])
+        # 讓表格套用這個整行變色的函數
+        styled_df_tech = df_tech.style.apply(style_tech_dataframe, axis=1)
 
         st.dataframe(
             styled_df_tech,
