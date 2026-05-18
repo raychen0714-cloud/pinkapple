@@ -487,6 +487,10 @@ def fetch_data(etf_list):
     monthly_calendar = {i: {"amount": 0, "sources": []} for i in range(1, 13)} 
     today = datetime.today()
 
+    # 初始化用來記錄除息修正張數的記憶體
+    if 'ex_div_shares_v2' not in st.session_state:
+        st.session_state['ex_div_shares_v2'] = {}
+
     for item in etf_list:
         try:
             tk = yf.Ticker(item['symbol'])
@@ -559,7 +563,6 @@ def fetch_data(etf_list):
                     div_amount = float(latest['Dividends'].values[0]) 
                     last_ex_date_obj = latest.index[0].replace(tzinfo=None)
                     
-                    # 💡 關鍵修改：不論是過去還是未來，都強制把真實日期抓出來，不再顯示待官方公告
                     ex_date = last_ex_date_obj.strftime('%Y-%m-%d')
                     pay_date = (last_ex_date_obj + timedelta(days=28)).strftime('%Y-%m-%d') 
                     
@@ -571,6 +574,10 @@ def fetch_data(etf_list):
             if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
+            # 💡 【核心修改】：從記憶體中抓取使用者在網頁上修正的除息張數，若沒填則預設為當前庫存張數
+            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], item['holdings'])
+            calc_div_shares = ex_shares_setting * 1000  # 換算成股數
+
             if is_announced:
                 ex_date_obj = datetime.strptime(ex_date, '%Y-%m-%d')
                 days_diff_ex = (ex_date_obj.date() - today.date()).days
@@ -578,20 +585,21 @@ def fetch_data(etf_list):
                 
                 pay_date_obj = datetime.strptime(pay_date, '%Y-%m-%d')
                 days_diff_pay = (pay_date_obj.date() - today.date()).days
-                if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": shares * div_amount, "days": days_diff_pay})
+                # 領息雷達同步改用修正後的張數計算
+                if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
 
-            if div_amount > 0 and shares > 0:
+            if div_amount > 0 and calc_div_shares > 0:
                 explicit_pay_month = None
                 if is_announced and pay_date != "待官方公告":
                     explicit_pay_month = datetime.strptime(pay_date, '%Y-%m-%d').month
-                    monthly_calendar[explicit_pay_month]["amount"] += (shares * div_amount)
+                    monthly_calendar[explicit_pay_month]["amount"] += (calc_div_shares * div_amount)
                     if item['name'] not in monthly_calendar[explicit_pay_month]["sources"]:
                         monthly_calendar[explicit_pay_month]["sources"].append(item['name'])
 
                 for m in months_to_pay:
                     pay_m = m + 1 if m < 12 else 1
                     if pay_m != explicit_pay_month:
-                        monthly_calendar[pay_m]["amount"] += (shares * div_amount)
+                        monthly_calendar[pay_m]["amount"] += (calc_div_shares * div_amount)
                         if item['name'] not in monthly_calendar[pay_m]["sources"]:
                             monthly_calendar[pay_m]["sources"].append(item['name'])
 
@@ -622,17 +630,18 @@ def fetch_data(etf_list):
             except Exception:
                 pass
 
-            total_mkt += mkt_val; total_cost += cost_val; total_div += (shares * div_amount)
+            # 總預估領息金額改用修正後的張數累加
+            total_mkt += mkt_val; total_cost += cost_val; total_div += (calc_div_shares * div_amount)
             
             results.append({
                 "代號": item['symbol'], "名稱": item['name'], "現價": curr_p, "均價": item['cost'],
                 "張數": item['holdings'], "市值": mkt_val, "損益": profit, "報酬率": roi,
-                "單次預估領息": shares * div_amount, "每股配息": div_amount,
+                "單次預估領息": calc_div_shares * div_amount, "每股配息": div_amount,
                 "最新公告除息日": ex_date, "預估發放日": pay_date, "已公告": is_announced,
                 "最新填息紀錄": fill_status 
             })
             
-           # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
+            # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
             today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
@@ -1133,6 +1142,7 @@ with bot_c2:
         col_add1, col_add2 = st.columns(2)
         with col_add1:
             st.number_input("張數", step=1.0, key="add_h_bot")
+            # --- 新增：除息張數修正輸入框 ---
         with col_add2:
             st.number_input("均價", step=0.1, key="add_c_bot")
         
