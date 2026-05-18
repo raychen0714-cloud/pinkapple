@@ -628,7 +628,7 @@ def fetch_data(etf_list):
             
             # 如果算出來大於一萬（這不合理），代表 yfinance 吐出的原始數據放大了，我們就再除以 100
             vol_calc = vol / 10000
-            vol_wan_str = f"{vol / 1000000:.2f} 萬" if vol > 0 else "無資料"
+            vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
             tech_results.append({
                 "ETF 名稱": display_name,
@@ -638,7 +638,7 @@ def fetch_data(etf_list):
                 "今日損益": today_pnl_str,
                 "今日漲跌(點)": today_diff_str,   # 新增漲跌點數
                 "今日漲跌幅": today_pct_str, 
-                "今日交易量(萬)": vol_wan_str     # 縮短單位為萬、小數點兩位
+                "今日交易量(萬張)": vol_wan_str     # 縮短單位為萬、小數點兩位
             })
             
         except Exception as e: continue
