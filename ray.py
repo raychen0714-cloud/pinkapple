@@ -1165,74 +1165,54 @@ if st.session_state.show_history:
     st.markdown("#### 📜 專屬持股歷史情報")
     st.info("🚧 歷史情報區塊已順利開通！")
     st.write("---")
-# 🎯 買賣損益試算面板與執行交易功能
-with st.expander("💰 買賣損益試算器", expanded=False):
-    st.markdown("<div class='calc-title'>依照即時現價，試算買進或賣出後的損益狀況，並可直接寫入庫存！</div>", unsafe_allow_html=True)
+# --- 📜 展開持股歷史情報 ---
+if st.session_state.show_history:
+    st.markdown("#### 📜 專屬持股歷史走勢與情報")
     
-    if not df.empty:
-        calc_options = [row['名稱'] for _, row in df.iterrows()]
+    if st.session_state.my_data['etfs']:
+        # 1. 建立選單，讓你可以自由切換要看哪一檔庫存的歷史
+        history_options = [item['name'] for item in st.session_state.my_data['etfs']]
+        selected_history_etf = st.selectbox("🔍 請選擇要查看歷史走勢的標的：", history_options, key="history_select")
         
-        if 'calc_selected_etf' not in st.session_state: st.session_state.calc_selected_etf = calc_options[0]
-        if 'calc_trade_type' not in st.session_state: st.session_state.calc_trade_type = "賣出 (計算已實現損益)"
-        if 'calc_trade_shares' not in st.session_state: st.session_state.calc_trade_shares = 1.0
+        # 2. 找出對應的股票代號
+        selected_symbol = ""
+        for item in st.session_state.my_data['etfs']:
+            if item['name'] == selected_history_etf:
+                selected_symbol = item['symbol']
+                break
         
-        st.selectbox("選擇要操作的庫存標的：", calc_options, key="calc_selected_etf")
-        
-        target_row = df[df['名稱'] == st.session_state.calc_selected_etf].iloc[0]
-        current_price = target_row['現價']
-        current_cost = target_row['均價']
-        current_holdings = target_row['張數']
-        
-        st.info(f"📍 **{st.session_state.calc_selected_etf}** | 目前庫存：{current_holdings} 張 | 庫存均價：${current_cost:.2f} | 系統即時現價：${current_price:.2f}")
-        
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            st.radio("交易動作：", ["賣出 (計算已實現損益)", "買進 (計算買入成本與新均價)"], key="calc_trade_type")
-        with col_c2:
-            st.number_input("輸入交易張數", min_value=0.1, step=1.0, key="calc_trade_shares")
-            
-        if st.session_state.calc_trade_type == "賣出 (計算已實現損益)":
-            trade_shares_display = st.session_state.calc_trade_shares
-            if trade_shares_display > current_holdings:
-                st.warning(f"⚠️ 賣出張數 ({trade_shares_display}) 大於目前庫存 ({current_holdings})，將以全數出清試算並執行。")
-                trade_shares_display = current_holdings
-                
-            realized_profit = (current_price - current_cost) * trade_shares_display * 1000
-            
-            st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-            st.write(f"📝 試算賣出 **{trade_shares_display}** 張")
-            if realized_profit > 0:
-                st.markdown(f"🎉 預估已實現損益 (賺)：<div class='calc-result-profit'>+${realized_profit:,.0f}</div>", unsafe_allow_html=True)
-            elif realized_profit < 0:
-                st.markdown(f"📉 預估已實現損益 (賠)：<div class='calc-result-loss'>-${abs(realized_profit):,.0f}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"⚖️ 預估已實現損益：<div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>$0</div>", unsafe_allow_html=True)
-                
-            st.markdown(f"<div class='calc-result-info'>*不含手續費與證交稅，成交價以系統抓取之現價 ${current_price:.2f} 計算</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            st.button("💾 確認賣出並更新庫存", type="primary", use_container_width=True, on_click=execute_trade)
-            
-        else: # 買進
-            trade_shares_display = st.session_state.calc_trade_shares
-            buy_cost_total = current_price * trade_shares_display * 1000
-            new_total_shares = current_holdings + trade_shares_display
-            new_total_cost_val = (current_cost * current_holdings * 1000) + buy_cost_total
-            new_avg_cost = new_total_cost_val / (new_total_shares * 1000) if new_total_shares > 0 else 0
-            
-            st.markdown("<div class='calc-box'>", unsafe_allow_html=True)
-            st.write(f"📝 試算買進 **{trade_shares_display}** 張")
-            st.markdown(f"💸 預估買入總花費：<div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>${buy_cost_total:,.0f}</div>", unsafe_allow_html=True)
-            st.markdown(f"🎯 買入後全新均價：<div style='font-size: 20px; font-weight: bold; color: #1e3c72; margin-top: 10px;'>${new_avg_cost:.2f}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='calc-result-info'>*總庫存將變為 {new_total_shares} 張。不含手續費，成交價以系統抓取之現價 ${current_price:.2f} 計算</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-            st.button("💾 確認買進並更新庫存", type="primary", use_container_width=True, on_click=execute_trade)
-            
+        if selected_symbol:
+            with st.spinner(f"正在從證交所載入 {selected_history_etf} 的歷史數據..."):
+                try:
+                    # 3. 抓取過去一年的歷史資料
+                    tk = yf.Ticker(selected_symbol)
+                    hist_data = tk.history(period="1y")
+                    
+                    if not hist_data.empty:
+                        # 整理資料給圖表用 (去除時區避免 Streamlit 畫圖報錯)
+                        hist_data.index = hist_data.index.tz_localize(None) 
+                        chart_data = hist_data[['Close']].rename(columns={'Close': '收盤價'})
+                        
+                        # 4. 畫出超帥的歷史折線圖
+                        st.line_chart(chart_data, use_container_width=True)
+                        
+                        # 5. 補充這檔股票的歷史高低點數據
+                        high_52w = hist_data['High'].max()
+                        low_52w = hist_data['Low'].min()
+                        current_p = hist_data['Close'].iloc[-1]
+                        
+                        hc1, hc2, hc3 = st.columns(3)
+                        hc1.metric("📈 近一年最高價", f"${high_52w:.2f}")
+                        hc2.metric("📉 近一年最低價", f"${low_52w:.2f}")
+                        hc3.metric("🎯 最新收盤價", f"${current_p:.2f}")
+                    else:
+                        st.warning("⚠️ 暫時無法取得該標的的歷史資料。")
+                except Exception as e:
+                    st.error("🚨 讀取資料時發生錯誤，請稍後再試。")
     else:
-        st.warning("請先在下方「標的管理」新增庫存，才能進行試算喔！")
-
-st.write("---")
+        st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
+        
+    st.write("---")
 
 # 🎯 最底層操作列 (手動更新 + 標的管理 + 自動更新開關)
 bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
