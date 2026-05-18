@@ -626,19 +626,19 @@ def fetch_data(etf_list):
                 "最新填息紀錄": fill_status 
             })
             
-            # 如果算出來大於一萬（這不合理），代表 yfinance 吐出的原始數據放大了，我們就再除以 100
-            vol_calc = vol / 10000
+           # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
+            today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
             tech_results.append({
                 "ETF 名稱": display_name,
                 "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
-                "均價": item['cost'],            # 新增均價在現價旁邊
+                "均價": item['cost'],
                 "今日損益": today_pnl_str,
-                "今日漲跌(點)": today_diff_str,   # 新增漲跌點數
+                "今日漲跌(點)": today_diff_str,
                 "今日漲跌幅": today_pct_str, 
-                "今日交易量(萬張)": vol_wan_str     # 縮短單位為萬、小數點兩位
+                "今日交易量(萬張)": vol_wan_str
             })
             
         except Exception as e: continue
