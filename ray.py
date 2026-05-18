@@ -36,6 +36,7 @@ st.markdown("""
     /* 三拼損益與領息橫列大看板樣式 */
     .triple-box { background-color: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 15px; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.04); gap: 10px; }
     .triple-col { flex: 1 1 30%; min-width: 140px; text-align: center; padding: 10px 0; }
+    .triple-col { flex: 1 1 30%; min-width: 140px; text-align: center; padding: 10px 0; }
     .triple-title { font-size: 14px; color: #757575; font-weight: bold; margin-bottom: 5px; }
     .triple-val-r { font-size: 28px; font-weight: 900; color: #b71c1c; font-family: Arial, sans-serif; line-height: 1.1; }
     .triple-val-g { font-size: 28px; font-weight: 900; color: #2e7d32; font-family: Arial, sans-serif; line-height: 1.1; }
@@ -130,7 +131,7 @@ DIVIDEND_DB = {
     "00927.TW": {"v": 0.94, "d": "2026-04-18", "p": "2026-05-15"},  
     "00878.TW": {"v": 0.66, "d": "2026-05-19", "p": "2026-06-16"},   # 國泰永續高股息
     "00891.TW": {"v": 1.25, "d": "2026-05-19", "p": "2026-06-16"},   # 中信關鍵半導體
-    "00982A.TW": {"v": 0.64, "d": "2026-05-19", "p": "2026-06-16"},  # 主動群益台灣強棒 (已修正為0.66)
+    "00982A.TW": {"v": 0.64, "d": "2026-05-19", "p": "2026-06-16"},  # 主動群益台灣強棒
 }
 
 ETF_CONSTITUENTS_DB = {
@@ -478,7 +479,6 @@ def fetch_watchlist_dividend(wl_list):
     return pd.DataFrame(results)
 
 # --- 4. 核心數據計算 ---
-# @st.cache_data(ttl=10)
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
     results, tech_results = [], []
@@ -574,8 +574,8 @@ def fetch_data(etf_list):
             if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
-            # 💡 【核心修改】：從記憶體中抓取使用者在網頁上修正的除息張數，若沒填則預設為當前庫存張數
-            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], item['holdings'])
+            # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
+            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
             calc_div_shares = ex_shares_setting * 1000  # 換算成股數
 
             if is_announced:
@@ -588,7 +588,7 @@ def fetch_data(etf_list):
                 # 領息雷達同步改用修正後的張數計算
                 if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
 
-           # 💡 讓 1~12 月領息日曆也同步採用你修正後的除息張數計算
+            # 💡 讓 1~12 月領息日曆也全自動同步採用你修正後的除息張數計算
             if div_amount > 0 and calc_div_shares > 0:
                 explicit_pay_month = None
                 if is_announced and pay_date != "待官方公告":
@@ -647,7 +647,7 @@ def fetch_data(etf_list):
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
             tech_results.append({
-                "ETF 名稱": display_name,
+                "ETF 名仙": display_name,
                 "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
                 "均價": item['cost'],
@@ -682,15 +682,6 @@ c1.metric("股票總市值", f"${g_mkt:,.0f}")
 c2.metric("投資總成本", f"${g_cost:,.0f}")
 c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
 st.write("---") 
-
-
-if price_alerts:
-    for alert in price_alerts:
-        if alert['type'] == "high":
-            st.markdown(f"<div class='alert-high'>🚨 突破停利高標：【{alert['name']}】 現價 ${alert['price']:.2f} 已突破您設定的 ${alert['target']}！</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='alert-low'>⚠️ 跌破停損低標：【{alert['name']}】 現價 ${alert['price']:.2f} 已跌破您設定的 ${alert['target']}！</div>", unsafe_allow_html=True)
-
 
 # 重新計算總損益
 total_net_profit = df['損益'].sum() if not df.empty else 0
@@ -738,12 +729,6 @@ html_triple_pnl = f"""
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
-
-c1, c2, c3 = st.columns(3)
-c1.metric("股票總市值", f"${g_mkt:,.0f}")
-c2.metric("投資總成本", f"${g_cost:,.0f}")
-c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
-st.write("---")
 
 us_icon = "🌏"
 if "us" in macro_data and macro_data["us"]:
@@ -797,6 +782,7 @@ if st.session_state.show_tw and "tw" in macro_data and macro_data["tw"]:
     st.write("---")
 
 
+# --- 📅 展開每月領息 ---
 if st.session_state.show_calendar:
     st.markdown("#### 📅 1~12月 預估領息日曆")
     month_options = [f"{m} 月" for m in range(1, 13)]
@@ -806,6 +792,7 @@ if st.session_state.show_calendar:
     data = monthly_calendar[selected_month]
     sources_text = "、".join(data["sources"]) if data["sources"] else "本月無除息預定"
     amount_text = f"${data['amount']:,.0f}" if data["amount"] > 0 else "$0"
+    
     col_space1, col_center, col_space2 = st.columns([1, 2, 1])
     with col_center:
         st.markdown(f"""
@@ -815,13 +802,30 @@ if st.session_state.show_calendar:
             <div class='month-sources'>ETF 來源：{sources_text}</div>
         </div>
         """, unsafe_allow_html=True)
+        
+        # 💡 【加碼新功能】：直接在日曆卡片下方顯示該月份有貢獻領息的標的，並且可以直接在這裡微調除息張數！
+        if data["sources"]:
+            st.markdown("<div style='text-align:center; font-weight:bold; color:#555; margin-top:10px;'>✏️ 微調此月份領息標的張數</div>", unsafe_allow_html=True)
+            for item in st.session_state.my_data['etfs']:
+                if item['name'] in data["sources"]:
+                    saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
+                    new_val = st.number_input(
+                        f"調整【{item['name']}】領息張數",
+                        min_value=0.0,
+                        value=float(saved_val),
+                        step=1.0,
+                        key=f"cal_m_{selected_month}_{item['symbol']}"
+                    )
+                    if new_val != saved_val:
+                        st.session_state['ex_div_shares_v2'][item['symbol']] = new_val
+                        st.cache_data.clear()
+                        st.rerun()
     st.write("---")
 
 # --- 📂 展開除權息 ---
 if st.session_state.show_div_db:
     st.markdown("#### 📚 專屬 ETF 除權息時程總覽")
     
-    # 💡 新增：手動強制更新按鈕
     if st.button("🔄 強制抓取最新官方公告", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -832,7 +836,6 @@ if st.session_state.show_div_db:
             sym = row['代號']; months = DIVIDEND_SCHEDULE.get(sym, [])
             freq = "月配" if len(months)==12 else "季配" if len(months)==4 else "半年配" if len(months)==2 else "年配" if len(months)==1 else "未知"
             
-            # 💡 自動判斷：如果在今天之前，就顯示為上期紀錄；如果在未來，就是即將除息
             ex_d = row['最新公告除息日']
             if ex_d != "待官方公告":
                 try:
@@ -880,7 +883,6 @@ if st.session_state.show_tech:
         except AttributeError:
             styled_df_tech = df_tech.style.applymap(color_profit_loss, subset=['今日損益', '今日漲跌(點)', '今日漲跌幅'])
 
-        # 改用標準 dataframe 呈現，並加入紅綠雙色標記
         st.dataframe(
             styled_df_tech,
             column_config={
@@ -901,14 +903,38 @@ if st.session_state.show_tech:
 if st.session_state.show_holdings:
     if not df.empty:
         st.markdown("#### 📊 持股動態明細")
-        for _, row in df.iterrows():
+        for idx, item in enumerate(st.session_state.my_data['etfs']):
+            row = df[df['代號'] == item['symbol']].iloc[0]
             p_color = "red" if row['損益'] >= 0 else "green"; roi_str = f"{row['報酬率']:+.2f}%"
             status_badge = "✅ 已公告" if row['已公告'] else "⏳ 依前次估算"
+            
             with st.expander(f"💎 {row['名稱']} | 預估淨報酬: :{p_color}[{roi_str}]", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
-                with col_l: st.write(f"張數: **{row['張數']}**"); st.write(f"現價: **{row['現價']:.2f}**"); st.caption(f"均價: {row['均價']:.2f}")
-                with col_m: st.markdown(f"市值: **${row['市值']:,.0f}**"); st.markdown(f"預估淨利: :{p_color}[**${row['損益']:,.0f}**]")
-                with col_r: st.markdown(f"單次領息估算: :orange[**${row['單次預估領息']:,.0f}**]"); st.caption(f"📅 最新除息日: {row['最新公告除息日']} ({status_badge})")
+                with col_l: 
+                    st.write(f"當前持有總庫存: **{row['張數']} 張**")
+                    st.write(f"系統現價: **{row['現價']:.2f}**")
+                    st.caption(f"持倉均價: {row['均價']:.2f}")
+                    
+                    # 💡 【加碼新功能】：直接在每檔明細展開後，加上「✏️ 修正本期領息張數」的欄位
+                    saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
+                    new_val = st.number_input(
+                        f"✏️ 修正本期領息張數 (目前設定: {saved_val} 張)",
+                        min_value=0.0,
+                        value=float(saved_val),
+                        step=1.0,
+                        key=f"detail_mod_{item['symbol']}"
+                    )
+                    if new_val != saved_val:
+                        st.session_state['ex_div_shares_v2'][item['symbol']] = new_val
+                        st.cache_data.clear()
+                        st.rerun()
+                        
+                with col_m: 
+                    st.markdown(f"市值: **${row['市值']:,.0f}**")
+                    st.markdown(f"預估淨利: :{p_color}[**${row['損益']:,.0f}**]")
+                with col_r: 
+                    st.markdown(f"本期預估領息金額: :orange[**${row['單次預估領息']:,.0f}**]")
+                    st.caption(f"📅 除息日期: {row['最新公告除息日']} ({status_badge})")
     else:
         st.info("⚠️ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
     st.write("---")
@@ -1054,7 +1080,6 @@ with st.expander("💰 買賣損益試算器", expanded=False):
     if not df.empty:
         calc_options = [row['名稱'] for _, row in df.iterrows()]
         
-        # 建立專屬 session_state 變數，避免執行後數值亂跳
         if 'calc_selected_etf' not in st.session_state: st.session_state.calc_selected_etf = calc_options[0]
         if 'calc_trade_type' not in st.session_state: st.session_state.calc_trade_type = "賣出 (計算已實現損益)"
         if 'calc_trade_shares' not in st.session_state: st.session_state.calc_trade_shares = 1.0
@@ -1094,7 +1119,6 @@ with st.expander("💰 買賣損益試算器", expanded=False):
             st.markdown(f"<div class='calc-result-info'>*不含手續費與證交稅，成交價以系統抓取之現價 ${current_price:.2f} 計算</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # 🎯 執行按鈕
             st.button("💾 確認賣出並更新庫存", type="primary", use_container_width=True, on_click=execute_trade)
             
         else: # 買進
@@ -1111,7 +1135,6 @@ with st.expander("💰 買賣損益試算器", expanded=False):
             st.markdown(f"<div class='calc-result-info'>*總庫存將變為 {new_total_shares} 張。不含手續費，成交價以系統抓取之現價 ${current_price:.2f} 計算</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
-            # 🎯 執行按鈕
             st.button("💾 確認買進並更新庫存", type="primary", use_container_width=True, on_click=execute_trade)
             
     else:
@@ -1143,7 +1166,6 @@ with bot_c2:
         col_add1, col_add2 = st.columns(2)
         with col_add1:
             st.number_input("張數", step=1.0, key="add_h_bot")
-            # --- 新增：除息張數修正輸入框 ---
         with col_add2:
             st.number_input("均價", step=0.1, key="add_c_bot")
         
@@ -1170,7 +1192,6 @@ with bot_c3:
     st.markdown("#### ⚡ 系統自動更新")
     st.caption("開啟後每 5 秒自動重整抓取最新即時股價")
     
-    # 初始化預設狀態
     if 'auto_refresh_mode' not in st.session_state:
         st.session_state.auto_refresh_mode = "❌ NO USE (關閉)"
         
@@ -1182,7 +1203,6 @@ with bot_c3:
         label_visibility="collapsed"
     )
     st.markdown("</div>", unsafe_allow_html=True)
-
 
 
 # 🎯 放在腳本最底層的自動更新執行邏輯
