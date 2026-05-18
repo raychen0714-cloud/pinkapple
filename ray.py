@@ -576,8 +576,8 @@ def fetch_data(etf_list):
 
             # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
             # 💡 優先讀取檔案裡存下來的自訂張數，都沒有的話才用預設庫存張數
-            file_saved_val = item.get('ex_div_shares_custom', float(item['holdings']))
-            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], file_saved_val)
+            # 💡 直接從核心設定檔讀取 custom 數值，如果沒有改過，就用原本庫存的 holdings
+            ex_shares_setting = float(item.get('ex_div_shares_custom', item['holdings']))
             calc_div_shares = ex_shares_setting * 1000  # 換算成股數
 
             if is_announced:
@@ -810,16 +810,32 @@ if st.session_state.show_calendar:
             st.markdown("<div style='text-align:center; font-weight:bold; color:#555; margin-top:10px;'>✏️ 微調此月份領息標的張數</div>", unsafe_allow_html=True)
             for item in st.session_state.my_data['etfs']:
                 if item['name'] in data["sources"]:
-                    saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
+                    # 💡 1. 優先從你最核心的設定檔(item)裡抓出數值，如果沒有自訂過，就用原本的總庫存(holdings)
+                    saved_val = float(item.get('ex_div_shares_custom', item['holdings']))
+                    
                     new_val = st.number_input(
-                        f"調整【{item['name']}】領息張數",
-                        min_value=0.0,
-                        value=float(saved_val),
-                        step=1.0,
-                        key=f"cal_m_{selected_month}_{item['symbol']}"
+                        "修正本次領息張數", 
+                        min_value=0.0, 
+                        value=saved_val, 
+                        step=1.0, 
+                        key=f"edit_shares_{item['symbol']}"
                     )
+                    
                     if new_val != saved_val:
+                        # 💡 2. 使用者一改，我們直接找到記憶體裡對應的那檔股票
+                        for original_etf in st.session_state.my_data['etfs']:
+                            if original_etf['symbol'] == item['symbol']:
+                                # 直接把自訂張數寫進核心資料結構中
+                                original_etf['ex_div_shares_custom'] = new_val
+                                break
+                        
+                        # 💡 3. 強制同步更新網頁元件的記憶體，防止畫面殘留舊值
                         st.session_state['ex_div_shares_v2'][item['symbol']] = new_val
+                        
+                        # 💡 4. 馬上把改好的核心資料，實體寫入 settings.json 存檔
+                        save_to_json(st.session_state.my_data)
+                        
+                        # 清除快取並重新整理畫面
                         st.cache_data.clear()
                         st.rerun()
     st.write("---")
