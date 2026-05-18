@@ -1163,22 +1163,47 @@ if st.session_state.show_pledge:
 # --- 📜 展開持股歷史情報 ---
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_daily_history_fixed(symbol, days):
+def fetch_daily_history_tank(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
-        tk = yf.Ticker(symbol)
-        hist = tk.history(period="3mo")
-        if hist.empty: return pd.DataFrame()
         
-        # 💡 真正的解法：強制把時間轉成「純日期」，並且把 Yahoo 重複生成的「今天」強制刪除，保證一天只有一筆！
-        hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
-        hist = hist[~hist.index.duplicated(keep='last')]
+        # 回歸最單純的 yf.download 抓取
+        data = yf.download(symbol, period="3mo", progress=False)
+        if data.empty: return pd.DataFrame()
         
-        hist['漲跌'] = hist['Close'].diff()
-        hist['漲跌幅'] = hist['Close'].pct_change() * 100
+        # 破壞所有多層欄位，把 yfinance 的亂象壓扁
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+            
+        # 統一將欄位轉首字母大寫，防呆
+        data.columns = [str(c).strip().capitalize() for c in data.columns]
         
-        return hist.dropna(subset=['漲跌']).tail(days)
-    except:
+        if 'Close' not in data.columns:
+            return pd.DataFrame()
+            
+        # 把純淨的收盤價和日期抽出來
+        df_clean = data[['Close']].copy()
+        df_clean = df_clean.reset_index()
+        df_clean.columns = ['Date', 'Close']
+        
+        # 💡 裝甲級日期處理：不管原本是什麼妖魔鬼怪時區，強制包成 UTC -> 轉台灣時區 -> 拔除時區 -> 歸零時間
+        df_clean['Date'] = pd.to_datetime(df_clean['Date'], utc=True)
+        df_clean['Date'] = df_clean['Date'].dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
+        
+        # 💡 終極去重：針對純粹的 Date 欄位，只要日期同一天，毫不留情只留最後一筆最新價
+        df_clean = df_clean.drop_duplicates(subset=['Date'], keep='last')
+        
+        # 強制數值型態並計算漲跌
+        df_clean['Close'] = pd.to_numeric(df_clean['Close'], errors='coerce')
+        df_clean = df_clean.sort_values('Date')
+        
+        df_clean['漲跌'] = df_clean['Close'].diff()
+        df_clean['漲跌幅'] = df_clean['Close'].pct_change() * 100
+        
+        df_clean.set_index('Date', inplace=True)
+        
+        return df_clean.dropna(subset=['漲跌']).tail(days)
+    except Exception as e:
         return pd.DataFrame()
 
 if st.session_state.show_history:
@@ -1196,7 +1221,7 @@ if st.session_state.show_history:
         
         if selected_symbol:
             with st.spinner("載入中..."):
-                hist_data = fetch_daily_history_fixed(selected_symbol, lookback_days)
+                hist_data = fetch_daily_history_tank(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
