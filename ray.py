@@ -1163,37 +1163,34 @@ if st.session_state.show_pledge:
 # --- 📜 展開持股歷史情報 ---
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_daily_history_tank(symbol, days):
+def fetch_daily_history_ultimate(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
         
-        # 回歸最單純的 yf.download 抓取
+        # 把 Volume (成交量) 一起抓下來當作照妖鏡
         data = yf.download(symbol, period="3mo", progress=False)
         if data.empty: return pd.DataFrame()
         
-        # 破壞所有多層欄位，把 yfinance 的亂象壓扁
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
             
-        # 統一將欄位轉首字母大寫，防呆
         data.columns = [str(c).strip().capitalize() for c in data.columns]
         
-        if 'Close' not in data.columns:
+        if 'Close' not in data.columns or 'Volume' not in data.columns:
             return pd.DataFrame()
             
-        # 把純淨的收盤價和日期抽出來
-        df_clean = data[['Close']].copy()
-        df_clean = df_clean.reset_index()
-        df_clean.columns = ['Date', 'Close']
+        df_clean = data[['Close', 'Volume']].copy()
         
-        # 💡 裝甲級日期處理：不管原本是什麼妖魔鬼怪時區，強制包成 UTC -> 轉台灣時區 -> 拔除時區 -> 歸零時間
-        df_clean['Date'] = pd.to_datetime(df_clean['Date'], utc=True)
-        df_clean['Date'] = df_clean['Date'].dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
+        # 💡 殺手鐧 1：拔除所有時區，只留純粹的「日期」，避免時差造成跨日
+        df_clean['Date'] = pd.to_datetime(df_clean.index).tz_localize(None).normalize()
         
-        # 💡 終極去重：針對純粹的 Date 欄位，只要日期同一天，毫不留情只留最後一筆最新價
+        # 💡 殺手鐧 2：Yahoo 愛塞週末假資料？我們把「成交量不大於 0」的日子全砍了！
+        df_clean['Volume'] = pd.to_numeric(df_clean['Volume'], errors='coerce').fillna(0)
+        df_clean = df_clean[df_clean['Volume'] > 0]
+        
+        # 💡 殺手鐧 3：如果同一天還是被吐了盤中與盤後兩筆，強制去重只留最新一筆
         df_clean = df_clean.drop_duplicates(subset=['Date'], keep='last')
         
-        # 強制數值型態並計算漲跌
         df_clean['Close'] = pd.to_numeric(df_clean['Close'], errors='coerce')
         df_clean = df_clean.sort_values('Date')
         
@@ -1221,7 +1218,7 @@ if st.session_state.show_history:
         
         if selected_symbol:
             with st.spinner("載入中..."):
-                hist_data = fetch_daily_history_tank(selected_symbol, lookback_days)
+                hist_data = fetch_daily_history_ultimate(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
