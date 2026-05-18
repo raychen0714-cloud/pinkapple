@@ -933,12 +933,28 @@ if st.session_state.show_holdings:
             roi_str = f"{row['報酬率']:+.2f}%"
             status_badge = "✅ 已公告" if row['已公告'] else "⏳ 依前次估算"
             
-            with st.expander(f"💎 {row['名稱']} | 預估投資狀態: :{p_color}[{roi_str}]", expanded=True):
+            with st.expander(f"💎 {row['名稱']} | 預估投資狀態: {roi_str}", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
                 with col_l: 
+                    col_l, col_m, col_r = st.columns(3)
+                with col_l: 
                     st.write(f"當前持有總庫存: **{row['張數']} 張**")
-                    # 💡 讓下面的系統現價也完美套用這個紅綠顏色
-                    st.write(f"系統現價: :{p_color}[**{row['現價']:.2f}**]")
+                    
+                    # 💡【全新不破現價變色邏輯】：直接比對現價與你的均價
+                    curr_price_val = float(row['現價'])
+                    my_cost_val = float(item['cost'])
+                    
+                    if curr_price_val > my_cost_val:
+                        # 賺錢：現價顯示純紅色
+                        st.markdown(f"系統現價: <span style='color: #ff3333; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                    elif curr_price_val < my_cost_val:
+                        # 賠錢：現價顯示純綠色
+                        st.markdown(f"系統現價: <span style='color: #00cc44; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                    else:
+                        # 一樣：維持原本平價顏色
+                        st.write(f"系統現價: **{row['現價']:.2f}**")
+                        
+                    st.caption(f"持倉均價: {row['均價']:.2f}")
                     
                     # 💡 【加碼新功能】：直接在每檔明細展開後，加上「✏️ 修正本期領息張數」的欄位
                     saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
