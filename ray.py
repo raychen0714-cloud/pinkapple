@@ -317,31 +317,6 @@ def toggle_holdings(): st.session_state.show_holdings = not st.session_state.sho
 def toggle_constituents(): st.session_state.show_constituents = not st.session_state.show_constituents
 def toggle_pledge(): st.session_state.show_pledge = not st.session_state.show_pledge 
 
-# --- 📡 抓取 ETF 焦點新聞 ---
-@st.cache_data(ttl=3600)
-def fetch_etf_news():
-    news_list = []
-    today_str = datetime.now().strftime("%m/%d")
-    try:
-        url = "https://news.google.com/rss/search?q=%E5%8F%B0%E7%81%A3+ETF+%E6%96%B0%E4%B8%8A%E5%B8%82+OR+%E9%85%8D%E6%81%AF+OR+%E6%88%90%E5%88%86%E8%82%A1&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            root = ET.fromstring(response.read())
-            for item in root.findall('.//item')[:4]:
-                title = item.find('title').text
-                if " - " in title: title = title.rsplit(" - ", 1)[0]
-                link = item.find('link').text
-                news_list.append({"title": f"{today_str} {title}", "link": link})
-    except Exception: pass
-    
-    if not news_list:
-        news_list = [
-            {"title": f"{today_str} 盤前觀察：半導體龍頭動向 (影響 00927 走勢)", "link": "#"},
-            {"title": f"{today_str} 高股息標的篩選：關注 00878、0056 成分股調整", "link": "#"},
-            {"title": f"{today_str} 焦點情報：多檔新上市主動式 ETF 展開募集與掛牌", "link": "#"},
-            {"title": f"{today_str} 大盤壓力測試：正二 (00631L) 槓桿風險控管建議", "link": "#"}
-        ]
-    return news_list
 
 # --- 📈 抓取美台股大盤指標 ---
 @st.cache_data(ttl=300) 
@@ -500,7 +475,7 @@ def fetch_watchlist_dividend(wl_list):
     return pd.DataFrame(results)
 
 # --- 4. 核心數據計算 ---
-@st.cache_data(ttl=10)
+# @st.cache_data(ttl=10)
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
     results, tech_results = [], []
