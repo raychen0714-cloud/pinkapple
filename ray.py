@@ -311,7 +311,9 @@ if 'show_tech' not in st.session_state: st.session_state.show_tech = False
 if 'show_holdings' not in st.session_state: st.session_state.show_holdings = False
 if 'show_constituents' not in st.session_state: st.session_state.show_constituents = False 
 if 'show_pledge' not in st.session_state: st.session_state.show_pledge = False 
+if 'show_history' not in st.session_state: st.session_state.show_history = False 
 
+def toggle_history(): st.session_state.show_history = not st.session_state.show_history
 def toggle_us(): st.session_state.show_us = not st.session_state.show_us
 def toggle_tw(): st.session_state.show_tw = not st.session_state.show_tw
 def toggle_calendar(): st.session_state.show_calendar = not st.session_state.show_calendar
@@ -758,7 +760,7 @@ b6_lbl, b6_typ = ("🔽 收起持股明細", "primary") if st.session_state.show
 
 b7_lbl, b7_typ = ("🔽 收起ETF成份股", "primary") if st.session_state.show_constituents else ("🧩 展開ETF成份股", "secondary")
 b8_lbl, b8_typ = ("🔽 收起質押專區", "primary") if st.session_state.show_pledge else ("🏦 展開質押專區", "secondary") 
-
+b9_lbl, b9_typ = ("🔽 收起歷史情報", "primary") if st.session_state.show_history else ("📜 展開持股歷史情報", "secondary")
 
 with cols_btn_r1[0]: st.button(b1_lbl, on_click=toggle_us, type=b1_typ, use_container_width=True)
 with cols_btn_r1[1]: st.button(b2_lbl, on_click=toggle_tw, type=b2_typ, use_container_width=True)
@@ -770,7 +772,7 @@ with cols_btn_r2[2]: st.button(b6_lbl, on_click=toggle_holdings, type=b6_typ, us
 
 with cols_btn_r3[0]: st.button(b7_lbl, on_click=toggle_constituents, type=b7_typ, use_container_width=True) 
 with cols_btn_r3[1]: st.button(b8_lbl, on_click=toggle_pledge, type=b8_typ, use_container_width=True) 
-
+with cols_btn_r3[2]: st.button(b9_lbl, on_click=toggle_history, type=b9_typ, use_container_width=True)
 st.write("---")
 
 if st.session_state.show_us and "us" in macro_data and macro_data["us"]:
@@ -1158,7 +1160,11 @@ if st.session_state.show_pledge:
     else:
         st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
-
+# --- 📜 展開持股歷史情報 ---
+if st.session_state.show_history:
+    st.markdown("#### 📜 專屬持股歷史情報")
+    st.info("🚧 歷史情報區塊已順利開通！")
+    st.write("---")
 # 🎯 買賣損益試算面板與執行交易功能
 with st.expander("💰 買賣損益試算器", expanded=False):
     st.markdown("<div class='calc-title'>依照即時現價，試算買進或賣出後的損益狀況，並可直接寫入庫存！</div>", unsafe_allow_html=True)
