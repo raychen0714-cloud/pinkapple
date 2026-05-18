@@ -946,47 +946,7 @@ if st.session_state.show_tech:
         
     st.write("---")
     
-    # --- 整合在展開股價監控內的自選股區域 ---
-    st.markdown("#### 👀 自選股觀察清單")
-    st.caption("追蹤您尚未入手、正在觀察的標的")
-    
-    col_w1, col_w2, col_w3 = st.columns([2, 2, 1])
-    with col_w1:
-        st.text_input("輸入代碼 (不需手打 .TW)", placeholder="例如: 2330", key="add_sym_wl", on_change=auto_fill_wl_name)
-    with col_w2:
-        st.text_input("自定義名稱", placeholder="例如: 2330 台積電", key="add_name_wl")
-    with col_w3:
-        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-        st.button("➕ 加入名單", key="btn_add_wl", on_click=add_new_wl, use_container_width=True)
-
-    wl_df = fetch_watchlist_data(st.session_state.my_data.get('watchlist', []))
-    if not wl_df.empty:
-        def color_diff(val):
-            if isinstance(val, str) and '%' in val:
-                if val.startswith('+'): return 'color: #d32f2f; font-weight: bold;'
-                elif val.startswith('-'): return 'color: #388e3c; font-weight: bold;'
-            elif isinstance(val, (int, float)):
-                if val > 0: return 'color: #d32f2f; font-weight: bold;'
-                elif val < 0: return 'color: #388e3c; font-weight: bold;'
-            return ''
-        
-        try:
-            styled_wl = wl_df.style.map(color_diff, subset=['漲跌', '漲跌幅'])
-        except AttributeError:
-            styled_wl = wl_df.style.applymap(color_diff, subset=['漲跌', '漲跌幅'])
-            
-        st.dataframe(styled_wl, use_container_width=True, hide_index=True)
-        
-        with st.expander("🗑️ 管理與刪除自選股"):
-            for i, item in enumerate(st.session_state.my_data['watchlist']):
-                cols_wl_del = st.columns([3, 1, 6])
-                cols_wl_del[0].markdown(f"📍 **{item['name']}**")
-                cols_wl_del[1].button("刪除", key=f"del_wl_{i}", on_click=delete_wl, args=(i,), use_container_width=True)
-    else:
-        st.info("目前尚無自選股。請在上方輸入代碼新增您的觀察名單！")
-
-    st.write("---")
-
+   
 # --- 📊 展開持股明細 ---
 if st.session_state.show_holdings:
     if not df.empty:
@@ -1272,60 +1232,7 @@ with bot_c3:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-st.write("---")
-st.markdown("### 📈 持股歷史股價趨勢 (近 30 日)")
 
-current_etfs = [item['symbol'] for item in st.session_state.my_data.get('etfs', [])]
-
-if current_etfs:
-    with st.spinner("正在繪製高精度股價戰報..."):
-        try:
-            price_history = yf.download(current_etfs, period="1mo")['Close']
-            
-            if len(current_etfs) == 1:
-                price_history = price_history.to_frame()
-                price_history.columns = [st.session_state.my_data['etfs'][0]['name']]
-            else:
-                name_map = {item['symbol']: item['name'] for item in st.session_state.my_data['etfs']}
-                price_history = price_history.rename(columns=name_map)
-            
-            df_chart = price_history.reset_index()
-            date_col = df_chart.columns[0]
-            df_melted = df_chart.melt(id_vars=[date_col], var_name='ETF', value_name='Price')
-
-            chart = alt.Chart(df_melted).mark_line().encode(
-                x=alt.X(f'{date_col}:T',
-                        axis=alt.Axis(
-                            format='%d日',      
-                            title=None,
-                            grid=False
-                        )),
-                y=alt.Y('Price:Q',
-                        scale=alt.Scale(zero=False), 
-                        axis=alt.Axis(
-                            title=None,
-                            labelFontSize=10,  
-                            tickMinStep=1,     
-                            tickCount=40,      
-                            gridColor='#f0f2f6'
-                        )),
-                color=alt.Color('ETF:N', legend=alt.Legend(title=None, orient="bottom")),
-                tooltip=[
-                    alt.Tooltip(f'{date_col}:T', format='%Y/%m/%d', title='日期'),
-                    alt.Tooltip('ETF:N', title='標的'),
-                    alt.Tooltip('Price:Q', format='.2f', title='收盤價')
-                ]
-            ).properties(
-                height=450
-            ).interactive()
-
-            st.altair_chart(chart, use_container_width=True)
-            st.caption("數據來源：Yahoo Finance (近一個月每日收盤價趨勢)")
-        except Exception as e:
-            st.error(f"圖表產生失敗：{e}")
-            st.info("提示：請確認網路連線正常或 ETF 代碼是否正確。")
-else:
-    st.info("目前庫存中沒有標的。請由上方「標的管理」面板新增您的愛股！")
 
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
