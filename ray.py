@@ -651,18 +651,19 @@ def fetch_data(etf_list):
                 "最新填息紀錄": fill_status 
             })
             
+            # 計算漲跌點數與將交易量換算為「萬」
+            today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
+            vol_wan_str = f"{vol / 10000:.2f} 萬" if vol > 0 else "無資料"
+
             tech_results.append({
                 "ETF 名稱": display_name,
                 "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
+                "均價": item['cost'],            # 新增均價在現價旁邊
                 "今日損益": today_pnl_str,
+                "今日漲跌(點)": today_diff_str,   # 新增漲跌點數
                 "今日漲跌幅": today_pct_str, 
-                "今日交易量": f"{vol:,.0f}" if vol > 0 else "無資料",
-                "預估年化殖利率": f"{est_yield:.2f}%",
-                "今日最高/最低": f"${day_high:.2f} / ${day_low:.2f}",
-                "52週最高/最低": f"${year_high:.2f} / ${year_low:.2f}",
-                "設定高標(停利)": a_high,
-                "設定低標(停損)": a_low
+                "今日交易量(萬)": vol_wan_str     # 縮短單位為萬、小數點兩位
             })
             
         except Exception as e: continue
@@ -900,7 +901,7 @@ if st.session_state.show_div_db:
 # --- 📡 展開股價監控 ---
 if st.session_state.show_tech:
     if not df.empty:
-        st.markdown("#### 📡 庫存價格區間監控與技術分析 (👉 雙擊表格數值設定警報，設 0 代表關閉)")
+        st.markdown("#### 📡 庫存即時股價監控")
         
         def color_profit_loss(val):
             if isinstance(val, str):
@@ -909,38 +910,22 @@ if st.session_state.show_tech:
             return ''
 
         try:
-            styled_df_tech = df_tech.style.map(color_profit_loss, subset=['今日損益', '今日漲跌幅'])
+            styled_df_tech = df_tech.style.map(color_profit_loss, subset=['今日損益', '今日漲跌(點)', '今日漲跌幅'])
         except AttributeError:
-            styled_df_tech = df_tech.style.applymap(color_profit_loss, subset=['今日損益', '今日漲跌幅'])
+            styled_df_tech = df_tech.style.applymap(color_profit_loss, subset=['今日損益', '今日漲跌(點)', '今日漲跌幅'])
 
-        edited_tech = st.data_editor(
+        # 改用標準 dataframe 呈現，並加入紅綠雙色標記
+        st.dataframe(
             styled_df_tech,
             column_config={
-                "設定高標(停利)": st.column_config.NumberColumn("設定高標(停利)", help="雙擊輸入，超過觸發紅色警報", min_value=0.0, format="%.2f"),
-                "設定低標(停損)": st.column_config.NumberColumn("設定低標(停損)", help="雙擊輸入，低於觸發綠色警報", min_value=0.0, format="%.2f"),
                 "現價": st.column_config.NumberColumn("現價", format="%.2f"),
+                "均價": st.column_config.NumberColumn("均價", format="%.2f"),
                 "股票張數": st.column_config.NumberColumn("股票張數", format="%.1f") 
             },
-            disabled=["ETF 名稱", "股票張數", "現價", "今日損益", "今日漲跌幅", "今日交易量", "預估年化殖利率", "今日最高/最低", "52週最高/最低"],
             use_container_width=True, hide_index=True
         )
-
-        has_changes = False
-        for _, row in edited_tech.iterrows():
-            display_name = row['ETF 名稱']
-            for etf in st.session_state.my_data['etfs']:
-                if etf['name'] in display_name:
-                    if etf.get('alert_high', 0.0) != row['設定高標(停利)'] or etf.get('alert_low', 0.0) != row['設定低標(停損)']:
-                        etf['alert_high'] = row['設定高標(停利)']
-                        etf['alert_low'] = row['設定低標(停損)']
-                        has_changes = True
-                    break
-        if has_changes:
-            save_to_json(st.session_state.my_data)
-            st.cache_data.clear()
-            st.rerun()
     else:
-        st.markdown("#### 📡 庫存價格區間監控")
+        st.markdown("#### 📡 庫存即時股價監控")
         st.info("目前無庫存標的。")
         
     st.write("---")
