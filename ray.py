@@ -938,18 +938,17 @@ if st.session_state.show_holdings:
                 with col_l:
                     st.write(f"張數: **{row['張數']}**")
                     
-                    # 💡 【終極紅綠對決】：直接強制轉成數字進行大小比對
+                    # 💡 用最安全的數字對決
                     curr_price_val = float(row['現價'])
                     my_cost_val = float(item['cost'])
                     
                     if curr_price_val > my_cost_val:
-                        # 📈 賺錢：現價亮紅色（如：00878 現價 27.8 > 均價 24.6 絕對變紅！）
-                        st.markdown(f"現價: <span style='color: #d32f2f; font-weight: bold; font-size: 16px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                        # 📈 賺錢：用 Streamlit 內建語法，現價兩字和數字都會變紅
+                        st.write(f":red[現價: {row['現價']:.2f}]")
                     elif curr_price_val < my_cost_val:
-                        # 📉 賠錢：現價亮綠色
-                        st.markdown(f"現價: <span style='color: #2e7d32; font-weight: bold; font-size: 16px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                        # 📉 賠錢：用 Streamlit 內建語法，現價兩字和數字都會變綠
+                        st.write(f":green[現價: {row['現價']:.2f}]")
                     else:
-                        # 平盤：維持普通粗體
                         st.write(f"現價: **{row['現價']:.2f}**")
                         
                     st.caption(f"均價: {row['均價']:.2f}")
