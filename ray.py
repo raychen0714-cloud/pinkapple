@@ -1162,16 +1162,34 @@ if st.session_state.show_pledge:
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 
-# 💡 終極防護：加入快取機制，抓過一次就秒讀，拒絕轉圈卡死！
+# 💡 終極防護：加入多層欄位防護，破解 yfinance 資料格式亂跳的問題
 @st.cache_data(ttl=3600)
-def fetch_history_fast(symbol, days):
+def fetch_history_safe(symbol, days):
     try:
         tk = yf.Ticker(symbol)
-        hist = tk.history(period="3mo") # 縮短抓取區間加快速度
-        if not hist.empty:
+        hist = tk.history(period="6mo") # 抓長一點確保能算出漲跌
+        
+        if hist.empty:
+            return pd.DataFrame()
+            
+        # 🚨 破解 yfinance 近期會亂傳雙層欄位 (MultiIndex) 的 Bug
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+            
+        # 統一強制首字母大寫，防呆
+        hist.columns = [str(c).strip().capitalize() for c in hist.columns]
+        
+        if 'Close' in hist.columns:
+            # 確保時間格式不會報錯，並轉為純數字
+            hist.index = hist.index.tz_localize(None)
+            hist['Close'] = pd.to_numeric(hist['Close'], errors='coerce')
+            
             hist['漲跌'] = hist['Close'].diff()
             hist['漲跌幅'] = hist['Close'].pct_change() * 100
+            
+            # 去除空值，回傳指定天數
             return hist.dropna(subset=['漲跌']).tail(days)
+            
         return pd.DataFrame()
     except:
         return pd.DataFrame()
@@ -1180,7 +1198,6 @@ if st.session_state.show_history:
     st.markdown("#### 📜 專屬持股每日漲跌情報")
     
     if st.session_state.my_data['etfs']:
-        # 1. 介面設定
         col_sel1, col_sel2 = st.columns([2, 1])
         with col_sel1:
             history_options = [item['name'] for item in st.session_state.my_data['etfs']]
@@ -1191,12 +1208,11 @@ if st.session_state.show_history:
         selected_symbol = next((item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == selected_history_etf), "")
         
         if selected_symbol:
-            with st.spinner(f"正在飛速載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
-                # 呼叫快取函式
-                hist_data = fetch_history_fast(selected_symbol, lookback_days)
+            with st.spinner(f"正在載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
+                # 呼叫全新命名的防呆函式
+                hist_data = fetch_history_safe(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
-                    # 2. 繪製橫向跑馬燈小卡片
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
                     for date, row in hist_data.iloc[::-1].iterrows():
                         date_str = date.strftime('%m/%d') 
@@ -1221,7 +1237,7 @@ if st.session_state.show_history:
                     html_cards += "</div>"
                     st.markdown(html_cards, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ 暫時無法取得該標的的歷史資料。")
+                    st.warning("⚠️ 暫時無法取得該標的的歷史資料，可能是剛上市或資料源延遲。")
     else:
         st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
         
