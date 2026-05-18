@@ -1162,34 +1162,27 @@ if st.session_state.show_pledge:
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_history_super_safe(symbol, days):
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_daily_history(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
-        tk = yf.Ticker(symbol)
-        hist = tk.history(period="6mo")
         
-        if hist.empty: return pd.DataFrame()
-            
-        # 🚨 破解 Yahoo Finance 偶發的雙層欄位 Bug
-        if isinstance(hist.columns, pd.MultiIndex):
-            hist.columns = hist.columns.get_level_values(0)
-            
-        # 強制轉成首字母大寫的標準格式
-        hist.columns = [str(c).strip().capitalize() for c in hist.columns]
+        # 退回最穩定的 yf.download，不讓系統自作聰明亂調價格
+        data = yf.download(symbol, period="3mo", progress=False)
+        if data.empty: return pd.DataFrame()
         
-        if 'Close' in hist.columns:
-            # 確保時間格式不會報錯，並轉為純數字
-            hist.index = hist.index.tz_localize(None)
-            hist['Close'] = pd.to_numeric(hist['Close'], errors='coerce')
+        # 暴力壓平欄位，只取乾淨的收盤價
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
             
-            hist['漲跌'] = hist['Close'].diff()
-            hist['漲跌幅'] = hist['Close'].pct_change() * 100
-            
-            # 去除空值，回傳指定天數
-            return hist.dropna(subset=['漲跌']).tail(days)
-            
-        return pd.DataFrame()
+        df_clean = pd.DataFrame()
+        df_clean['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+        
+        # 簡單暴力的相減
+        df_clean['漲跌'] = df_clean['Close'].diff()
+        df_clean['漲跌幅'] = df_clean['Close'].pct_change() * 100
+        
+        return df_clean.dropna().tail(days)
     except:
         return pd.DataFrame()
 
@@ -1207,9 +1200,8 @@ if st.session_state.show_history:
         selected_symbol = next((item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == selected_history_etf), "")
         
         if selected_symbol:
-            with st.spinner(f"正在載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
-                # 呼叫全新命名的防呆函式
-                hist_data = fetch_history_super_safe(selected_symbol, lookback_days)
+            with st.spinner("載入中..."):
+                hist_data = fetch_daily_history(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
@@ -1236,9 +1228,9 @@ if st.session_state.show_history:
                     html_cards += "</div>"
                     st.markdown(html_cards, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ 暫時無法取得該標的歷史資料 (可能為剛上市或 Yahoo 財經無數據)。")
+                    st.warning("⚠️ 暫時無法取得該標的歷史資料。")
     else:
-        st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
+        st.info("💡 請先在下方「標的管理」新增庫存。")
         
     st.write("---")
 
