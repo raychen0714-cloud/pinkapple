@@ -935,23 +935,21 @@ if st.session_state.show_holdings:
             
             with st.expander(f"💎 {row['名稱']} | 預估投資狀態: {roi_str}", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
-                with col_l:
-                    st.write(f"張數: **{row['張數']}**")
+                with col_l: 
+                    st.write(f"當前持有總庫存: **{row['張數']} 張**")
                     
                     # 💡 強制轉數字對決
                     curr_price_val = float(row['現價'])
                     my_cost_val = float(item['cost'])
                     
-                    if curr_price_val > my_cost_val:
-                        # 📈 賺錢：用 st.error 會強迫整條亮「紅色」大字！
-                        st.error(f"現價: {row['現價']:.2f}")
-                    elif curr_price_val < my_cost_val:
-                        # 📉 賠錢：用 st.success 會強迫整條亮「綠色」大字！（00878 保證亮綠）
-                        st.success(f"現價: {row['現價']:.2f}")
+                    if curr_price_val >= my_cost_val:
+                        # 📈 賺錢(現價 >= 均價)：系統現價顯示【紅色】
+                        st.markdown(f"系統現價: <span style='color: red; font-weight: bold;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
                     else:
-                        st.write(f"現價: **{row['現價']:.2f}**")
+                        # 📉 賠錢(現價 < 均價)：系統現價顯示【綠色】
+                        st.markdown(f"系統現價: <span style='color: green; font-weight: bold;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
                         
-                    st.caption(f"均價: {row['均價']:.2f}")
+                    st.caption(f"持倉均價: {row['均價']:.2f}")
                     
                     # 💡【全新不破型態轉換變色邏輯】：強制用 float 轉換成純數字，再進行大小對決
                     try:
