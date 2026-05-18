@@ -1160,78 +1160,7 @@ if st.session_state.show_pledge:
     else:
         st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
-# --- 📜 展開持股歷史情報 ---
-
-# 💡 終極防護：加入快取機制，抓過一次就秒讀，拒絕轉圈卡死！
-@st.cache_data(ttl=3600)
-def fetch_history_fast(symbol, days):
-    try:
-        tk = yf.Ticker(symbol)
-        hist = tk.history(period="3mo") # 縮短抓取區間加快速度
-        
-        # ✨【終極防錯機制】：不僅確認表格不為空，還要確保它真的有抓到 'Close' (收盤價) 欄位！
-        if not hist.empty and 'Close' in hist.columns:
-            hist['漲跌'] = hist['Close'].diff()
-            hist['漲跌幅'] = hist['Close'].pct_change() * 100
-            return hist.dropna(subset=['漲跌']).tail(days)
-            
-        # 如果格式壞掉或沒抓到，就乖乖回傳空表格，不要報錯當機
-        return pd.DataFrame()
-    except Exception as e:
-        return pd.DataFrame()
-    except:
-        return pd.DataFrame()
-
-if st.session_state.show_history:
-    st.markdown("#### 📜 專屬持股每日漲跌情報")
-    
-    if st.session_state.my_data['etfs']:
-        # 1. 介面設定
-        col_sel1, col_sel2 = st.columns([2, 1])
-        with col_sel1:
-            history_options = [item['name'] for item in st.session_state.my_data['etfs']]
-            selected_history_etf = st.selectbox("🔍 選擇要查看的標的：", history_options, key="history_select")
-        with col_sel2:
-            lookback_days = st.number_input("📅 設定顯示天數：", min_value=1, max_value=100, value=10, step=1)
-        
-        selected_symbol = next((item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == selected_history_etf), "")
-        
-        if selected_symbol:
-            with st.spinner(f"正在飛速載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
-                # 呼叫快取函式
-                hist_data = fetch_history_fast(selected_symbol, lookback_days)
-                
-                if not hist_data.empty:
-                    # 2. 繪製橫向跑馬燈小卡片
-                    html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
-                    for date, row in hist_data.iloc[::-1].iterrows():
-                        date_str = date.strftime('%m/%d') 
-                        diff_val = row['漲跌']
-                        pct_val = row['漲跌幅']
-                        
-                        if diff_val > 0:
-                            color, bg_color, sign = "#d32f2f", "#fff5f5", "+"
-                        elif diff_val < 0:
-                            color, bg_color, sign = "#2e7d32", "#f0fff0", ""
-                        else:
-                            color, bg_color, sign = "#555555", "#f8f9fa", ""
-                            
-                        html_cards += f"""
-                        <div style='min-width: 75px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
-                            <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
-                            <div style='font-size: 13px; color: #111; font-weight: bold; margin-bottom: 2px;'>{row['Close']:.2f}</div>
-                            <div style='font-size: 14px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
-                            <div style='font-size: 11px; font-weight: bold; color: {color};'>{sign}{pct_val:.2f}%</div>
-                        </div>
-                        """
-                    html_cards += "</div>"
-                    st.markdown(html_cards, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ 暫時無法取得該標的的歷史資料。")
-    else:
-        st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
-        
-    st.write("---")
+展開持股歷史情報
 
 # 🎯 最底層操作列 (手動更新 + 標的管理 + 自動更新開關)
 bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
