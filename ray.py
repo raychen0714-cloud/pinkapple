@@ -555,10 +555,13 @@ def fetch_data(etf_list):
                     latest = actions.sort_index(ascending=False).head(1)
                     div_amount = float(latest['Dividends'].values[0]) 
                     last_ex_date_obj = latest.index[0].replace(tzinfo=None)
+                    
+                    # 💡 關鍵修改：不論是過去還是未來，都強制把真實日期抓出來，不再顯示待官方公告
+                    ex_date = last_ex_date_obj.strftime('%Y-%m-%d')
+                    pay_date = (last_ex_date_obj + timedelta(days=28)).strftime('%Y-%m-%d') 
+                    
                     if last_ex_date_obj.date() >= today.date():
-                        ex_date = last_ex_date_obj.strftime('%Y-%m-%d')
-                        pay_date = (last_ex_date_obj + timedelta(days=28)).strftime('%Y-%m-%d') 
-                        is_announced = True
+                        is_announced = True  # 未來即將發生的除息
 
             est_yield = 0.0
             months_to_pay = DIVIDEND_SCHEDULE.get(item['symbol'], [])
@@ -803,43 +806,48 @@ if st.session_state.show_calendar:
 
 # --- 📂 展開除權息 ---
 if st.session_state.show_div_db:
-    st.markdown("#### 📚 專屬 ETF 與自選股 除權息時程總覽")
-    db_list = []
+    st.markdown("#### 📚 專屬 ETF 除權息時程總覽")
     
-    # 處理庫存資料
+    # 💡 新增：手動強制更新按鈕
+    if st.button("🔄 強制抓取最新官方公告", type="primary", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    db_list = []
     if not df.empty:
         for _, row in df.iterrows():
             sym = row['代號']; months = DIVIDEND_SCHEDULE.get(sym, [])
-            freq = "月配息" if len(months)==12 else "季配息" if len(months)==4 else "半年配" if len(months)==2 else "年配息" if len(months)==1 else "未知"
+            freq = "月配" if len(months)==12 else "季配" if len(months)==4 else "半年配" if len(months)==2 else "年配" if len(months)==1 else "未知"
+            
+            # 💡 自動判斷：如果在今天之前，就顯示為上期紀錄；如果在未來，就是即將除息
+            ex_d = row['最新公告除息日']
+            if ex_d != "待官方公告":
+                try:
+                    if datetime.strptime(ex_d, '%Y-%m-%d').date() >= datetime.today().date():
+                        status_badge = "✅ 即將除息"
+                    else:
+                        status_badge = "📅 上期紀錄"
+                except:
+                    status_badge = "未知"
+            else:
+                status_badge = "待官方公告"
+
             db_list.append({
-                "類別": "💼 庫存",
                 "ETF 名稱": row['名稱'], 
                 "配息頻率": freq, 
                 "配息月份": "、".join(map(str, months)) + " 月" if months else "未設定",
-                "狀態": "✅ 已公告" if row['已公告'] else "⏳ 依前次估算", 
-                "除息日": row['最新公告除息日'], 
+                "狀態": status_badge, 
+                "除息日": ex_d, 
                 "發放日": row['預估發放日'], 
                 "每股金額": f"${row['每股配息']:.3f}",
-                "最新填息紀錄": row['最新填息紀錄']
+                "填息紀錄": row['最新填息紀錄']
             })
             
     df_port_div = pd.DataFrame(db_list)
-    
-    # 抓取自選股除權息資料
-    df_wl_div = fetch_watchlist_dividend(st.session_state.my_data.get('watchlist', []))
-    
-    final_div_df = pd.DataFrame()
-    if not df_port_div.empty and not df_wl_div.empty:
-        final_div_df = pd.concat([df_port_div, df_wl_div], ignore_index=True)
-    elif not df_wl_div.empty:
-        final_div_df = df_wl_div
-    elif not df_port_div.empty:
-        final_div_df = df_port_div
-        
-    if not final_div_df.empty:
-        st.dataframe(final_div_df, use_container_width=True, hide_index=True)
+    if not df_port_div.empty:
+        st.dataframe(df_port_div, use_container_width=True, hide_index=True)
     else:
-        st.info("目前尚無庫存或自選股，因此無除權息資料可顯示。")
+        st.info("目前尚無庫存資料可顯示。")
         
     st.write("---")
 
