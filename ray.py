@@ -905,14 +905,18 @@ if st.session_state.show_holdings:
         st.markdown("#### 📊 持股動態明細")
         for idx, item in enumerate(st.session_state.my_data['etfs']):
             row = df[df['代號'] == item['symbol']].iloc[0]
-            p_color = "red" if row['損益'] >= 0 else "green"; roi_str = f"{row['報酬率']:+.2f}%"
+            
+            # 💡 【全新紅綠邏輯】：現價高於或等於均價就亮紅(red)，低於均價就亮綠(green)
+            p_color = "red" if row['現價'] >= row['均價'] else "green"
+            roi_str = f"{row['報酬率']:+.2f}%"
             status_badge = "✅ 已公告" if row['已公告'] else "⏳ 依前次估算"
             
-            with st.expander(f"💎 {row['名稱']} | 預估淨報酬: :{p_color}[{roi_str}]", expanded=True):
+            with st.expander(f"💎 {row['名稱']} | 預估投資狀態: :{p_color}[{roi_str}]", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
                 with col_l: 
                     st.write(f"當前持有總庫存: **{row['張數']} 張**")
-                    st.write(f"系統現價: **{row['現價']:.2f}**")
+                    # 💡 系統現價也會跟著這個新規則變色
+                    st.write(f"系統現價: :{p_color}[**{row['現價']:.2f}**]")
                     st.caption(f"持倉均價: {row['均價']:.2f}")
                     
                     # 💡 【加碼新功能】：直接在每檔明細展開後，加上「✏️ 修正本期領息張數」的欄位
