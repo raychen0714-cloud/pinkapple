@@ -936,22 +936,24 @@ if st.session_state.show_holdings:
             with st.expander(f"💎 {row['名稱']} | 預估投資狀態: {roi_str}", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
                 with col_l: 
-                    col_l, col_m, col_r = st.columns(3)
-                with col_l: 
                     st.write(f"當前持有總庫存: **{row['張數']} 張**")
                     
-                    # 💡【全新不破現價變色邏輯】：直接比對現價與你的均價
-                    curr_price_val = float(row['現價'])
-                    my_cost_val = float(item['cost'])
+                    # 💡【全新不破型態轉換變色邏輯】：強制用 float 轉換成純數字，再進行大小對決
+                    try:
+                        curr_price_val = float(row['現價'])
+                        my_cost_val = float(item['cost'])
+                    except:
+                        curr_price_val = 0.0
+                        my_cost_val = 0.0
                     
                     if curr_price_val > my_cost_val:
-                        # 賺錢：現價顯示純紅色
-                        st.markdown(f"系統現價: <span style='color: #ff3333; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                        # 賺錢：現價顯示紅色
+                        st.markdown(f"系統現價: <span style='color: #b71c1c; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
                     elif curr_price_val < my_cost_val:
-                        # 賠錢：現價顯示純綠色
-                        st.markdown(f"系統現價: <span style='color: #00cc44; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                        # 賠錢：現價顯示綠色 (00878 目前 24.35 < 24.60，這次絕對會乖乖走這裡！)
+                        st.markdown(f"系統現價: <span style='color: #2e7d32; font-weight: bold; font-size: 18px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
                     else:
-                        # 一樣：維持原本平價顏色
+                        # 完全一樣：維持原本平價顏色
                         st.write(f"系統現價: **{row['現價']:.2f}**")
                         
                     st.caption(f"持倉均價: {row['均價']:.2f}")
