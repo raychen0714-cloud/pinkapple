@@ -1168,10 +1168,16 @@ def fetch_history_fast(symbol, days):
     try:
         tk = yf.Ticker(symbol)
         hist = tk.history(period="3mo") # 縮短抓取區間加快速度
-        if not hist.empty:
+        
+        # ✨【終極防錯機制】：不僅確認表格不為空，還要確保它真的有抓到 'Close' (收盤價) 欄位！
+        if not hist.empty and 'Close' in hist.columns:
             hist['漲跌'] = hist['Close'].diff()
             hist['漲跌幅'] = hist['Close'].pct_change() * 100
             return hist.dropna(subset=['漲跌']).tail(days)
+            
+        # 如果格式壞掉或沒抓到，就乖乖回傳空表格，不要報錯當機
+        return pd.DataFrame()
+    except Exception as e:
         return pd.DataFrame()
     except:
         return pd.DataFrame()
