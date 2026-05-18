@@ -1218,11 +1218,12 @@ if st.session_state.show_history:
                                 bg_color = "#f8f9fa" # 淺灰背景
                                 sign = ""
                                 
-                            # 每一天的極窄小卡片 (min-width: 75px)
+                            # 每一天的極窄小卡片 (加入收盤價)
                             html_cards += f"""
                             <div style='min-width: 75px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
                                 <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
-                                <div style='font-size: 15px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
+                                <div style='font-size: 13px; color: #111; font-weight: bold; margin-bottom: 2px;'>{row['Close']:.2f}</div>
+                                <div style='font-size: 14px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
                                 <div style='font-size: 11px; font-weight: bold; color: {color};'>{sign}{pct_val:.2f}%</div>
                             </div>
                             """
