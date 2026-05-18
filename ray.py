@@ -148,8 +148,19 @@ def load_settings():
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f: return json.load(f)
         except: pass
+    
+    # 8 檔標的完整補齊（含 0 張觀察中的 0050）
     return {
-        "etfs": [], 
+        "etfs": [
+            {"symbol": "0056.TW", "name": "0056 元大高股息", "holdings": 20.0, "cost": 38.87, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00878.TW", "name": "00878 國泰永續高股息", "holdings": 22.0, "cost": 24.60, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00891.TW", "name": "00891 中信關鍵半導體", "holdings": 10.0, "cost": 33.97, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00927.TW", "name": "00927 群益半導體收益", "holdings": 20.0, "cost": 28.65, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "0050.TW", "name": "0050 元大台灣50", "holdings": 0.0, "cost": 90.58, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00403A.TW", "name": "00403A 主動統一台股升級50", "holdings": 5.0, "cost": 10.01, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 15.0, "cost": 28.10, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00992A.TW", "name": "00992A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0}
+        ], 
         "pledge": {"borrowed_amount": 0},
         "watchlist": [] 
     }
