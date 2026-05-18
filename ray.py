@@ -1163,26 +1163,21 @@ if st.session_state.show_pledge:
 # --- 📜 展開持股歷史情報 ---
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_daily_history(symbol, days):
+def fetch_daily_history_fixed(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
+        tk = yf.Ticker(symbol)
+        hist = tk.history(period="3mo")
+        if hist.empty: return pd.DataFrame()
         
-        # 退回最穩定的 yf.download，不讓系統自作聰明亂調價格
-        data = yf.download(symbol, period="3mo", progress=False)
-        if data.empty: return pd.DataFrame()
+        # 💡 真正的解法：強制把時間轉成「純日期」，並且把 Yahoo 重複生成的「今天」強制刪除，保證一天只有一筆！
+        hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+        hist = hist[~hist.index.duplicated(keep='last')]
         
-        # 暴力壓平欄位，只取乾淨的收盤價
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
-            
-        df_clean = pd.DataFrame()
-        df_clean['Close'] = pd.to_numeric(data['Close'], errors='coerce')
+        hist['漲跌'] = hist['Close'].diff()
+        hist['漲跌幅'] = hist['Close'].pct_change() * 100
         
-        # 簡單暴力的相減
-        df_clean['漲跌'] = df_clean['Close'].diff()
-        df_clean['漲跌幅'] = df_clean['Close'].pct_change() * 100
-        
-        return df_clean.dropna().tail(days)
+        return hist.dropna(subset=['漲跌']).tail(days)
     except:
         return pd.DataFrame()
 
@@ -1201,7 +1196,7 @@ if st.session_state.show_history:
         
         if selected_symbol:
             with st.spinner("載入中..."):
-                hist_data = fetch_daily_history(selected_symbol, lookback_days)
+                hist_data = fetch_daily_history_fixed(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
