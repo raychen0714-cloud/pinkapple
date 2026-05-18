@@ -760,7 +760,7 @@ b6_lbl, b6_typ = ("🔽 收起持股明細", "primary") if st.session_state.show
 
 b7_lbl, b7_typ = ("🔽 收起ETF成份股", "primary") if st.session_state.show_constituents else ("🧩 展開ETF成份股", "secondary")
 b8_lbl, b8_typ = ("🔽 收起質押專區", "primary") if st.session_state.show_pledge else ("🏦 展開質押專區", "secondary") 
-b9_lbl, b9_typ = ("🔽 收起歷史情報", "primary") if st.session_state.show_history else ("📜 展開持股歷史情報", "secondary")
+b9_lbl, b9_typ = ("🔽 收起歷史情報", "primary") if st.session_state.show_history else ("📜 展開歷史情報", "secondary")
 
 with cols_btn_r1[0]: st.button(b1_lbl, on_click=toggle_us, type=b1_typ, use_container_width=True)
 with cols_btn_r1[1]: st.button(b2_lbl, on_click=toggle_tw, type=b2_typ, use_container_width=True)
@@ -1162,21 +1162,20 @@ if st.session_state.show_pledge:
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 
-# 💡 終極防護：加入多層欄位防護，破解 yfinance 資料格式亂跳的問題
-@st.cache_data(ttl=3600)
-def fetch_history_safe(symbol, days):
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_history_super_safe(symbol, days):
     try:
+        if not symbol: return pd.DataFrame()
         tk = yf.Ticker(symbol)
-        hist = tk.history(period="6mo") # 抓長一點確保能算出漲跌
+        hist = tk.history(period="6mo")
         
-        if hist.empty:
-            return pd.DataFrame()
+        if hist.empty: return pd.DataFrame()
             
-        # 🚨 破解 yfinance 近期會亂傳雙層欄位 (MultiIndex) 的 Bug
+        # 🚨 破解 Yahoo Finance 偶發的雙層欄位 Bug
         if isinstance(hist.columns, pd.MultiIndex):
             hist.columns = hist.columns.get_level_values(0)
             
-        # 統一強制首字母大寫，防呆
+        # 強制轉成首字母大寫的標準格式
         hist.columns = [str(c).strip().capitalize() for c in hist.columns]
         
         if 'Close' in hist.columns:
@@ -1210,7 +1209,7 @@ if st.session_state.show_history:
         if selected_symbol:
             with st.spinner(f"正在載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
                 # 呼叫全新命名的防呆函式
-                hist_data = fetch_history_safe(selected_symbol, lookback_days)
+                hist_data = fetch_history_super_safe(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
@@ -1237,7 +1236,7 @@ if st.session_state.show_history:
                     html_cards += "</div>"
                     st.markdown(html_cards, unsafe_allow_html=True)
                 else:
-                    st.warning("⚠️ 暫時無法取得該標的的歷史資料，可能是剛上市或資料源延遲。")
+                    st.warning("⚠️ 暫時無法取得該標的歷史資料 (可能為剛上市或 Yahoo 財經無數據)。")
     else:
         st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
         
