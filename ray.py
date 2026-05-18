@@ -926,6 +926,8 @@ if st.session_state.show_holdings:
             
             # 💡【終極不破判定】：直接拿系統即時抓到的現價(row['現價']) 拿去跟你的成本(item['cost']) 來比！
             # 賺錢就是紅色 (red)，賠錢就是綠色 (green)
+            # 💡【終極不破顏色判定】：直接用即時現價比對你存在 json 裡的原始成本(item['cost'])
+            # 並且用 float() 確保兩邊都是數字，不會因為文字格式而比對失敗！
             p_color = "red" if float(row['現價']) >= float(item['cost']) else "green"
             
             roi_str = f"{row['報酬率']:+.2f}%"
@@ -935,9 +937,8 @@ if st.session_state.show_holdings:
                 col_l, col_m, col_r = st.columns(3)
                 with col_l: 
                     st.write(f"當前持有總庫存: **{row['張數']} 張**")
-                    # 💡 系統現價也會跟著這個新規則變色
+                    # 💡 讓下面的系統現價也完美套用這個紅綠顏色
                     st.write(f"系統現價: :{p_color}[**{row['現價']:.2f}**]")
-                    st.caption(f"持倉均價: {row['均價']:.2f}")
                     
                     # 💡 【加碼新功能】：直接在每檔明細展開後，加上「✏️ 修正本期領息張數」的欄位
                     saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
