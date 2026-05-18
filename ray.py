@@ -935,8 +935,24 @@ if st.session_state.show_holdings:
             
             with st.expander(f"💎 {row['名稱']} | 預估投資狀態: {roi_str}", expanded=True):
                 col_l, col_m, col_r = st.columns(3)
-                with col_l: 
-                    st.write(f"當前持有總庫存: **{row['張數']} 張**")
+                with col_l:
+                    st.write(f"張數: **{row['張數']}**")
+                    
+                    # 💡 【終極紅綠對決】：直接強制轉成數字進行大小比對
+                    curr_price_val = float(row['現價'])
+                    my_cost_val = float(item['cost'])
+                    
+                    if curr_price_val > my_cost_val:
+                        # 📈 賺錢：現價亮紅色（如：00878 現價 27.8 > 均價 24.6 絕對變紅！）
+                        st.markdown(f"現價: <span style='color: #d32f2f; font-weight: bold; font-size: 16px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                    elif curr_price_val < my_cost_val:
+                        # 📉 賠錢：現價亮綠色
+                        st.markdown(f"現價: <span style='color: #2e7d32; font-weight: bold; font-size: 16px;'>{row['現價']:.2f}</span>", unsafe_allow_html=True)
+                    else:
+                        # 平盤：維持普通粗體
+                        st.write(f"現價: **{row['現價']:.2f}**")
+                        
+                    st.caption(f"均價: {row['均價']:.2f}")
                     
                     # 💡【全新不破型態轉換變色邏輯】：強制用 float 轉換成純數字，再進行大小對決
                     try:
