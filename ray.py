@@ -1160,74 +1160,78 @@ if st.session_state.show_pledge:
     else:
         st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
-# 展開持股歷史情報
+# --- 📜 展開持股歷史情報 ---
 
-# 🎯 最底層操作列 (手動更新 + 標的管理 + 自動更新開關)
-bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
-
-with bot_c1:
-    if st.button("🔄 手動重新整理股價", use_container_width=True):
-        fetch_data.clear()
-        fetch_watchlist_dividend.clear()
-        st.rerun()
-
-with bot_c2:
-    with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=True):
-        st.markdown("#### ➕ 新增庫存標的 (股票/ETF)")
-        
-        if "add_name_bot" not in st.session_state: st.session_state.add_name_bot = ""
-        if "add_sym_bot" not in st.session_state: st.session_state.add_sym_bot = ""
-        if "add_h_bot" not in st.session_state: st.session_state.add_h_bot = 0.0
-        if "add_c_bot" not in st.session_state: st.session_state.add_c_bot = 0.0
-
-        st.text_input("輸入代碼 (不需手打 .TW)", placeholder="例如: 00878 或 00981A", key="add_sym_bot", on_change=auto_fill_etf_name)
-        st.text_input("自定義名稱", placeholder="例如: 00878 國泰永續高股息", key="add_name_bot")
-        
-        col_add1, col_add2 = st.columns(2)
-        with col_add1:
-            st.number_input("張數", step=1.0, key="add_h_bot")
-        with col_add2:
-            st.number_input("均價", step=0.1, key="add_c_bot")
-        
-        st.button("確認新增庫存", key="btn_add_bot", use_container_width=True, on_click=add_new_etf_bot)
-
-        if st.session_state.my_data['etfs']:
-            st.write("---")
-            st.markdown("#### 📝 庫存修改與刪除")
+# 💡 終極防護：抓取資料的快取函式
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_etf_history_data(symbol, days):
+    try:
+        if not symbol: 
+            return pd.DataFrame()
             
-            for i, item in enumerate(st.session_state.my_data['etfs']):
-                with st.expander(f"📍 {item['name']}"):
-                    col_e1, col_e2 = st.columns(2)
-                    with col_e1:
-                        st.number_input("張數", value=float(item['holdings']), step=1.0, key=f"edit_h_{i}")
-                    with col_e2:
-                        st.number_input("均價", value=float(item['cost']), step=0.1, key=f"edit_c_{i}")
-
-                    st.button(f"🗑️ 刪除 {item['name']}", key=f"del_{i}", on_click=delete_etf, args=(i,), use_container_width=True)
-
-            st.button("💾 儲存所有修改", use_container_width=True, type="primary", on_click=save_edits)
-
-with bot_c3:
-    st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
-    st.markdown("#### ⚡ 系統自動更新")
-    st.caption("開啟後每 5 秒自動重整抓取最新即時股價")
-    
-    if 'auto_refresh_mode' not in st.session_state:
-        st.session_state.auto_refresh_mode = "❌ NO USE (關閉)"
+        tk = yf.Ticker(symbol)
+        hist = tk.history(period="3mo")
         
-    auto_update = st.radio(
-        "即時更新 (每 5 秒)", 
-        ["❌ NO USE (關閉)", "✅ USE (開啟)"], 
-        key="auto_refresh_mode",
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+        if hist.empty: 
+            return pd.DataFrame()
+        
+        hist.columns = [str(c).strip().capitalize() for c in hist.columns]
+        
+        if 'Close' in hist.columns:
+            hist['漲跌'] = hist['Close'].diff()
+            hist['漲跌幅'] = hist['Close'].pct_change() * 100
+            return hist.dropna(subset=['漲跌']).tail(days)
+            
+        return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
-
-# 🎯 放在腳本最底層的自動更新執行邏輯
-if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
-    time.sleep(5)
-    fetch_data.clear()
-    fetch_watchlist_dividend.clear()
-    st.rerun()
+# 💡 UI 介面：真正把小卡片畫出來的地方
+if st.session_state.show_history:
+    st.markdown("#### 📜 專屬持股每日漲跌情報")
+    
+    if st.session_state.my_data['etfs']:
+        col_sel1, col_sel2 = st.columns([2, 1])
+        with col_sel1:
+            history_options = [item['name'] for item in st.session_state.my_data['etfs']]
+            selected_history_etf = st.selectbox("🔍 選擇要查看的標的：", history_options, key="history_select")
+        with col_sel2:
+            lookback_days = st.number_input("📅 設定顯示天數：", min_value=1, max_value=100, value=10, step=1)
+        
+        selected_symbol = next((item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == selected_history_etf), "")
+        
+        if selected_symbol:
+            with st.spinner(f"正在飛速載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
+                
+                hist_data = get_etf_history_data(selected_symbol, lookback_days)
+                
+                if not hist_data.empty:
+                    html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
+                    for date, row in hist_data.iloc[::-1].iterrows():
+                        date_str = date.strftime('%m/%d') 
+                        diff_val = row['漲跌']
+                        pct_val = row['漲跌幅']
+                        
+                        if diff_val > 0:
+                            color, bg_color, sign = "#d32f2f", "#fff5f5", "+"
+                        elif diff_val < 0:
+                            color, bg_color, sign = "#2e7d32", "#f0fff0", ""
+                        else:
+                            color, bg_color, sign = "#555555", "#f8f9fa", ""
+                            
+                        html_cards += f"""
+                        <div style='min-width: 75px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
+                            <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
+                            <div style='font-size: 13px; color: #111; font-weight: bold; margin-bottom: 2px;'>{row['Close']:.2f}</div>
+                            <div style='font-size: 14px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
+                            <div style='font-size: 11px; font-weight: bold; color: {color};'>{sign}{pct_val:.2f}%</div>
+                        </div>
+                        """
+                    html_cards += "</div>"
+                    st.markdown(html_cards, unsafe_allow_html=True)
+                else:
+                    st.warning("⚠️ 暫時無法取得該標的的歷史資料，可能是證交所資料延遲。")
+    else:
+        st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
+        
+    st.write("---")
