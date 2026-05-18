@@ -938,16 +938,16 @@ if st.session_state.show_holdings:
                 with col_l:
                     st.write(f"張數: **{row['張數']}**")
                     
-                    # 💡 用最安全的數字對決
+                    # 💡 強制轉數字對決
                     curr_price_val = float(row['現價'])
                     my_cost_val = float(item['cost'])
                     
                     if curr_price_val > my_cost_val:
-                        # 📈 賺錢：用 Streamlit 內建語法，現價兩字和數字都會變紅
-                        st.write(f":red[現價: {row['現價']:.2f}]")
+                        # 📈 賺錢：用 st.error 會強迫整條亮「紅色」大字！
+                        st.error(f"現價: {row['現價']:.2f}")
                     elif curr_price_val < my_cost_val:
-                        # 📉 賠錢：用 Streamlit 內建語法，現價兩字和數字都會變綠
-                        st.write(f":green[現價: {row['現價']:.2f}]")
+                        # 📉 賠錢：用 st.success 會強迫整條亮「綠色」大字！（00878 保證亮綠）
+                        st.success(f"現價: {row['現價']:.2f}")
                     else:
                         st.write(f"現價: **{row['現價']:.2f}**")
                         
