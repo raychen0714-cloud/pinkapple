@@ -1191,61 +1191,48 @@ if st.session_state.show_history:
                         hist_data['漲跌'] = hist_data['Close'].diff()
                         hist_data['漲跌幅'] = hist_data['Close'].pct_change() * 100
                         
-                        # 砍掉算不出漲跌的最前面那一筆，只取你設定的天數，並且「反轉順序（最新的日期在最上面）」
-                        hist_data = hist_data.dropna(subset=['漲跌']).tail(lookback_days).iloc[::-1]
+                        # 砍掉算不出漲跌的最前面那一筆，只取你設定的天數
+                        hist_data = hist_data.dropna(subset=['漲跌']).tail(lookback_days)
                         
-                        # 3. 整理成表格格式
-                        results_list = []
-                        for date, row in hist_data.iterrows():
-                            date_str = date.strftime('%Y-%m-%d')
+                        # 3. ✨【全新橫向卡片列設計】：使用 HTML 達成極窄欄寬與橫向滾動
+                        html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
+                        
+                        # 反轉順序，讓最新的日期在最左邊 (符合看盤習慣)
+                        for date, row in hist_data.iloc[::-1].iterrows():
+                            # 只顯示 月/日 (例如 05/18)，極度節省橫向空間
+                            date_str = date.strftime('%m/%d') 
                             diff_val = row['漲跌']
                             pct_val = row['漲跌幅']
                             
-                            # 幫數字加上正負號
-                            diff_str = f"+{diff_val:.2f}" if diff_val > 0 else f"{diff_val:.2f}"
-                            pct_str = f"+{pct_val:.2f}%" if pct_val > 0 else f"{pct_val:.2f}%"
-                            
-                            results_list.append({
-                                "日期": date_str,
-                                "收盤價": f"{row['Close']:.2f}",
-                                "漲跌(點)": diff_str,
-                                "漲跌幅": pct_str
-                            })
-                            
-                        df_hist_display = pd.DataFrame(results_list)
-                        
-                        # 4. ✨ 終極上色邏輯：偵測到 "+" 就是紅，偵測到 "-" 就是綠
-                        def color_hist_table(row):
-                            styles = [''] * len(row)
-                            diff_str = row['漲跌(點)']
-                            
-                            if diff_str.startswith('+'):
-                                color = 'color: #d32f2f; font-weight: bold;'  # 賺錢紅
-                            elif diff_str.startswith('-'):
-                                color = 'color: #388e3c; font-weight: bold;'  # 賠錢綠
+                            # 紅綠顏色與正負號判斷
+                            if diff_val > 0:
+                                color = "#d32f2f" # 紅色
+                                bg_color = "#fff5f5" # 淺紅背景
+                                sign = "+"
+                            elif diff_val < 0:
+                                color = "#2e7d32" # 綠色
+                                bg_color = "#f0fff0" # 淺綠背景
+                                sign = ""
                             else:
-                                color = ''
-                            
-                            # 只針對這兩個欄位上色
-                            try:
-                                styles[row.index.get_loc('漲跌(點)')] = color
-                                styles[row.index.get_loc('漲跌幅')] = color
-                            except: pass
-                            return styles
-                            
-                        styled_hist = df_hist_display.style.apply(color_hist_table, axis=1)
+                                color = "#555555" # 灰色
+                                bg_color = "#f8f9fa" # 淺灰背景
+                                sign = ""
+                                
+                            # 每一天的極窄小卡片 (min-width: 75px)
+                            html_cards += f"""
+                            <div style='min-width: 75px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
+                                <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
+                                <div style='font-size: 15px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
+                                <div style='font-size: 11px; font-weight: bold; color: {color};'>{sign}{pct_val:.2f}%</div>
+                            </div>
+                            """
+                        html_cards += "</div>"
                         
-                        # 顯示完美的大表格
-                        st.dataframe(styled_hist, use_container_width=True, hide_index=True)
+                        # 4. 渲染橫向滑動區塊
+                        st.markdown(html_cards, unsafe_allow_html=True)
                         
                     else:
                         st.warning("⚠️ 暫時無法取得該標的的歷史資料。")
-                except Exception as e:
-                    st.error("🚨 讀取資料時發生錯誤，請稍後再試。")
-    else:
-        st.info("💡 請先在下方「標的管理」新增庫存，才能查看歷史情報喔！")
-        
-    st.write("---")
 
 # 🎯 最底層操作列 (手動更新 + 標的管理 + 自動更新開關)
 bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
