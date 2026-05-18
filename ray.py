@@ -1163,43 +1163,40 @@ if st.session_state.show_pledge:
 # --- 📜 展開持股歷史情報 ---
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_daily_history_ultimate(symbol, days):
+def fetch_daily_history_bulletproof(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
         
-        # 把 Volume (成交量) 一起抓下來當作照妖鏡
-        data = yf.download(symbol, period="3mo", progress=False)
-        if data.empty: return pd.DataFrame()
+        # 改回最基礎的 Ticker.history，避開 yf.download 的多層級欄位地雷
+        tk = yf.Ticker(symbol)
+        hist = tk.history(period="3mo")
+        if hist.empty: return pd.DataFrame()
         
-        if isinstance(data.columns, pd.MultiIndex):
-            data.columns = data.columns.get_level_values(0)
+        hist = hist.reset_index()
+        # 確保日期欄位名稱正確
+        hist.rename(columns={hist.columns[0]: 'Date'}, inplace=True)
+        
+        # 💡 終極防護 1：強制轉為台灣時區，並剝離時間只留純日期
+        hist['Date'] = pd.to_datetime(hist['Date'], utc=True).dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
+        
+        # 💡 終極防護 2：物理超渡法！無情砍掉星期六 (5) 與星期日 (6)，直接拒絕 Yahoo 的假日假資料
+        hist = hist[hist['Date'].dt.weekday < 5]
+        
+        # 💡 終極防護 3：平日如果遇到國定假日沒開盤 (成交量=0) 也砍掉
+        if 'Volume' in hist.columns:
+            hist['Volume'] = pd.to_numeric(hist['Volume'], errors='coerce').fillna(0)
+            hist = hist[hist['Volume'] > 0]
             
-        data.columns = [str(c).strip().capitalize() for c in data.columns]
+        # 💡 終極防護 4：確保同一天絕對只有最後一筆收盤價
+        hist = hist.drop_duplicates(subset=['Date'], keep='last')
         
-        if 'Close' not in data.columns or 'Volume' not in data.columns:
-            return pd.DataFrame()
-            
-        df_clean = data[['Close', 'Volume']].copy()
+        # 排序並計算真正的漲跌
+        hist = hist.sort_values('Date')
+        hist['漲跌'] = hist['Close'].diff()
+        hist['漲跌幅'] = hist['Close'].pct_change() * 100
         
-        # 💡 殺手鐧 1：拔除所有時區，只留純粹的「日期」，避免時差造成跨日
-        df_clean['Date'] = pd.to_datetime(df_clean.index).tz_localize(None).normalize()
-        
-        # 💡 殺手鐧 2：Yahoo 愛塞週末假資料？我們把「成交量不大於 0」的日子全砍了！
-        df_clean['Volume'] = pd.to_numeric(df_clean['Volume'], errors='coerce').fillna(0)
-        df_clean = df_clean[df_clean['Volume'] > 0]
-        
-        # 💡 殺手鐧 3：如果同一天還是被吐了盤中與盤後兩筆，強制去重只留最新一筆
-        df_clean = df_clean.drop_duplicates(subset=['Date'], keep='last')
-        
-        df_clean['Close'] = pd.to_numeric(df_clean['Close'], errors='coerce')
-        df_clean = df_clean.sort_values('Date')
-        
-        df_clean['漲跌'] = df_clean['Close'].diff()
-        df_clean['漲跌幅'] = df_clean['Close'].pct_change() * 100
-        
-        df_clean.set_index('Date', inplace=True)
-        
-        return df_clean.dropna(subset=['漲跌']).tail(days)
+        hist.set_index('Date', inplace=True)
+        return hist.dropna(subset=['漲跌']).tail(days)
     except Exception as e:
         return pd.DataFrame()
 
@@ -1218,7 +1215,7 @@ if st.session_state.show_history:
         
         if selected_symbol:
             with st.spinner("載入中..."):
-                hist_data = fetch_daily_history_ultimate(selected_symbol, lookback_days)
+                hist_data = fetch_daily_history_bulletproof(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
