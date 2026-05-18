@@ -588,6 +588,7 @@ def fetch_data(etf_list):
                 # 領息雷達同步改用修正後的張數計算
                 if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
 
+           # 💡 讓 1~12 月領息日曆也同步採用你修正後的除息張數計算
             if div_amount > 0 and calc_div_shares > 0:
                 explicit_pay_month = None
                 if is_announced and pay_date != "待官方公告":
