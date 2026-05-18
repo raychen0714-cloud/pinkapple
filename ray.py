@@ -575,7 +575,9 @@ def fetch_data(etf_list):
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
             # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
-            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item['holdings']))
+            # 💡 優先讀取檔案裡存下來的自訂張數，都沒有的話才用預設庫存張數
+            file_saved_val = item.get('ex_div_shares_custom', float(item['holdings']))
+            ex_shares_setting = st.session_state['ex_div_shares_v2'].get(item['symbol'], file_saved_val)
             calc_div_shares = ex_shares_setting * 1000  # 換算成股數
 
             if is_announced:
@@ -906,8 +908,10 @@ if st.session_state.show_holdings:
         for idx, item in enumerate(st.session_state.my_data['etfs']):
             row = df[df['代號'] == item['symbol']].iloc[0]
             
-            # 💡 【全新紅綠邏輯】：現價高於或等於均價就亮紅(red)，低於均價就亮綠(green)
-            p_color = "red" if row['現價'] >= row['均價'] else "green"
+            # 💡【終極不破判定】：直接拿系統即時抓到的現價(row['現價']) 拿去跟你的成本(item['cost']) 來比！
+            # 賺錢就是紅色 (red)，賠錢就是綠色 (green)
+            p_color = "red" if float(row['現價']) >= float(item['cost']) else "green"
+            
             roi_str = f"{row['報酬率']:+.2f}%"
             status_badge = "✅ 已公告" if row['已公告'] else "⏳ 依前次估算"
             
@@ -929,7 +933,17 @@ if st.session_state.show_holdings:
                         key=f"detail_mod_{item['symbol']}"
                     )
                     if new_val != saved_val:
+                        # 1. 更新網頁記憶體
                         st.session_state['ex_div_shares_v2'][item['symbol']] = new_val
+                        
+                        # 2. ✨【關鍵修正】：把修正後的領息張數，直接同步寫進檔案保存！
+                        for original_etf in st.session_state.my_data['etfs']:
+                            if original_etf['symbol'] == item['symbol']:
+                                # 我們把這個修正值直接存在原本的資料結構裡
+                                original_etf['ex_div_shares_custom'] = new_val
+                                break
+                        save_to_json(st.session_state.my_data)
+                        
                         st.cache_data.clear()
                         st.rerun()
                         
