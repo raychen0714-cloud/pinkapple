@@ -1162,19 +1162,17 @@ if st.session_state.show_pledge:
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 if st.session_state.show_history:
-    st.markdown("#### 📜 專屬持股歷史情報")
-    st.info("🚧 歷史情報區塊已順利開通！")
-    st.write("---")
-# --- 📜 展開持股歷史情報 ---
-if st.session_state.show_history:
-    st.markdown("#### 📜 專屬持股歷史走勢與情報")
+    st.markdown("#### 📜 專屬持股每日漲跌情報")
     
     if st.session_state.my_data['etfs']:
-        # 1. 建立選單，讓你可以自由切換要看哪一檔庫存的歷史
-        history_options = [item['name'] for item in st.session_state.my_data['etfs']]
-        selected_history_etf = st.selectbox("🔍 請選擇要查看歷史走勢的標的：", history_options, key="history_select")
+        # 1. 介面設定：選擇股票 ＋ 自訂顯示天數
+        col_sel1, col_sel2 = st.columns([2, 1])
+        with col_sel1:
+            history_options = [item['name'] for item in st.session_state.my_data['etfs']]
+            selected_history_etf = st.selectbox("🔍 選擇要查看的標的：", history_options, key="history_select")
+        with col_sel2:
+            lookback_days = st.number_input("📅 設定顯示天數：", min_value=1, max_value=100, value=10, step=1)
         
-        # 2. 找出對應的股票代號
         selected_symbol = ""
         for item in st.session_state.my_data['etfs']:
             if item['name'] == selected_history_etf:
@@ -1182,29 +1180,64 @@ if st.session_state.show_history:
                 break
         
         if selected_symbol:
-            with st.spinner(f"正在從證交所載入 {selected_history_etf} 的歷史數據..."):
+            with st.spinner(f"正在載入 {selected_history_etf} 過去 {lookback_days} 天的每日漲跌..."):
                 try:
-                    # 3. 抓取過去一年的歷史資料
                     tk = yf.Ticker(selected_symbol)
-                    hist_data = tk.history(period="1y")
+                    # 為了精準算出第一天的漲跌，我們多往前抓一點資料
+                    hist_data = tk.history(period="6mo")
                     
                     if not hist_data.empty:
-                        # 整理資料給圖表用 (去除時區避免 Streamlit 畫圖報錯)
-                        hist_data.index = hist_data.index.tz_localize(None) 
-                        chart_data = hist_data[['Close']].rename(columns={'Close': '收盤價'})
+                        # 2. 精準算出每日漲跌與 %
+                        hist_data['漲跌'] = hist_data['Close'].diff()
+                        hist_data['漲跌幅'] = hist_data['Close'].pct_change() * 100
                         
-                        # 4. 畫出超帥的歷史折線圖
-                        st.line_chart(chart_data, use_container_width=True)
+                        # 砍掉算不出漲跌的最前面那一筆，只取你設定的天數，並且「反轉順序（最新的日期在最上面）」
+                        hist_data = hist_data.dropna(subset=['漲跌']).tail(lookback_days).iloc[::-1]
                         
-                        # 5. 補充這檔股票的歷史高低點數據
-                        high_52w = hist_data['High'].max()
-                        low_52w = hist_data['Low'].min()
-                        current_p = hist_data['Close'].iloc[-1]
+                        # 3. 整理成表格格式
+                        results_list = []
+                        for date, row in hist_data.iterrows():
+                            date_str = date.strftime('%Y-%m-%d')
+                            diff_val = row['漲跌']
+                            pct_val = row['漲跌幅']
+                            
+                            # 幫數字加上正負號
+                            diff_str = f"+{diff_val:.2f}" if diff_val > 0 else f"{diff_val:.2f}"
+                            pct_str = f"+{pct_val:.2f}%" if pct_val > 0 else f"{pct_val:.2f}%"
+                            
+                            results_list.append({
+                                "日期": date_str,
+                                "收盤價": f"{row['Close']:.2f}",
+                                "漲跌(點)": diff_str,
+                                "漲跌幅": pct_str
+                            })
+                            
+                        df_hist_display = pd.DataFrame(results_list)
                         
-                        hc1, hc2, hc3 = st.columns(3)
-                        hc1.metric("📈 近一年最高價", f"${high_52w:.2f}")
-                        hc2.metric("📉 近一年最低價", f"${low_52w:.2f}")
-                        hc3.metric("🎯 最新收盤價", f"${current_p:.2f}")
+                        # 4. ✨ 終極上色邏輯：偵測到 "+" 就是紅，偵測到 "-" 就是綠
+                        def color_hist_table(row):
+                            styles = [''] * len(row)
+                            diff_str = row['漲跌(點)']
+                            
+                            if diff_str.startswith('+'):
+                                color = 'color: #d32f2f; font-weight: bold;'  # 賺錢紅
+                            elif diff_str.startswith('-'):
+                                color = 'color: #388e3c; font-weight: bold;'  # 賠錢綠
+                            else:
+                                color = ''
+                            
+                            # 只針對這兩個欄位上色
+                            try:
+                                styles[row.index.get_loc('漲跌(點)')] = color
+                                styles[row.index.get_loc('漲跌幅')] = color
+                            except: pass
+                            return styles
+                            
+                        styled_hist = df_hist_display.style.apply(color_hist_table, axis=1)
+                        
+                        # 顯示完美的大表格
+                        st.dataframe(styled_hist, use_container_width=True, hide_index=True)
+                        
                     else:
                         st.warning("⚠️ 暫時無法取得該標的的歷史資料。")
                 except Exception as e:
