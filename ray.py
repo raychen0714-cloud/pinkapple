@@ -677,31 +677,20 @@ macro_data = fetch_macro_data()
 st.title("📈 實戰資產戰情室")
 st.caption(f"最後更新：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-news_data = fetch_etf_news()
-news_html = "<div class='news-box'><div class='news-title'>📰 今日財經焦點</div>"
-for news in news_data:
-    news_html += f"<div class='news-item'>👉 📍 <a href='{news['link']}' target='_blank'>{news['title']}</a></div>"
-news_html += "</div>"
-st.markdown(news_html, unsafe_allow_html=True)
+# 保留高低標價格警報功能
+if price_alerts:
+    for alert in price_alerts:
+        if alert['type'] == "high":
+            st.markdown(f"<div class='alert-high'>🚨 突破停利高標：【{alert['name']}】 現價 ${alert['price']:.2f} 已突破您設定的 ${alert['target']}！</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='alert-low'>⚠️ 跌破停損低標：【{alert['name']}】 現價 ${alert['price']:.2f} 已跌破您設定的 ${alert['target']}！</div>", unsafe_allow_html=True)
 
-st.markdown("### 🗓️ 2026 即將上市 ETF 追蹤")
-upcoming_list = [
-    {"date": "2026/05/05", "symbol": "00999A", "name": "主動野村臺灣動能", "price": "10.00"},
-    {"date": "2026/05/15", "symbol": "00403A", "name": "主動統一台股升級50", "price": "15.00"},
-    {"date": "2026/06/05", "symbol": "00401A", "name": "主動摩根台灣鑫收", "price": "15.00"},
-]
-
-up_cols = st.columns([1, 1, 1, 3]) 
-for i, etf in enumerate(upcoming_list):
-    with up_cols[i]:
-        st.markdown(f"""
-        <div class='upcoming-box'>
-            <div class='upcoming-title'>🚀 上市日：{etf['date']}</div>
-            <div class='upcoming-item'>{etf['symbol']} {etf['name']}</div>
-            <div class='upcoming-price'>發行價：${etf['price']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-st.write("")
+# 下面直接接市值、成本與領息數據
+c1, c2, c3 = st.columns(3)
+c1.metric("股票總市值", f"${g_mkt:,.0f}")
+c2.metric("投資總成本", f"${g_cost:,.0f}")
+c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
+st.write("---") 
 
 
 if price_alerts:
