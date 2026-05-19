@@ -1253,8 +1253,8 @@ bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
 
 with bot_c1:
     if st.button("🔄 手動重新整理股價", use_container_width=True):
-        fetch_data.clear()
-        fetch_watchlist_dividend.clear()
+        # 💡 終極解法：一鍵清除所有快取資料，安全又乾淨！
+        st.cache_data.clear()
         st.rerun()
 
 with bot_c2:
@@ -1314,6 +1314,6 @@ with bot_c3:
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
     time.sleep(5)
-    fetch_data.clear()
-    fetch_watchlist_dividend.clear()
+    # 💡 這裡也一樣，改成全域清除
+    st.cache_data.clear()
     st.rerun()
