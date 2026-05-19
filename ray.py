@@ -582,39 +582,35 @@ c2.metric("投資總成本", f"${g_cost:,.0f}")
 c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
 st.write("---")
 
-# 1. 確保所有計算所需的變數都有初始值 (防呆)
+# === 1. 確保所有計算變數都已存在 (防呆) ===
+# 確保這些變數即使在空資料時也有預設值
 total_net_profit = df['損益'].sum() if not df.empty else 0
 g_cost = g_cost if 'g_cost' in locals() else 0
 g_today_pnl = g_today_pnl if 'g_today_pnl' in locals() else 0
-
-# 2. 計算損益變數
 r_total = (total_net_profit / g_cost * 100) if g_cost != 0 else 0
-prev_mkt = g_mkt - g_today_pnl
+prev_mkt = g_mkt - g_today_pnl if 'g_mkt' in locals() and 'g_today_pnl' in locals() else 1
 today_pct = (g_today_pnl / prev_mkt * 100) if prev_mkt != 0 else 0
 
-# 3. 定義 HTML 顯示用的樣式變數 (這裡就是關鍵！)
+# === 2. 顏色定義 (確保變數存在) ===
 today_val_str = f"+{g_today_pnl:,.0f}" if g_today_pnl >= 0 else f"{g_today_pnl:,.0f}"
 today_pct_str = f"+{today_pct:.2f}%" if today_pct >= 0 else f"{today_pct:.2f}%"
 today_c_val = "triple-val-r" if g_today_pnl >= 0 else "triple-val-g"
 today_c_pct = "triple-pct-r" if g_today_pnl >= 0 else "triple-pct-g"
-
 total_val_str = f"+{total_net_profit:,.0f}" if total_net_profit >= 0 else f"{total_net_profit:,.0f}"
 total_pct_str = f"+{r_total:.2f}%" if r_total >= 0 else f"{r_total:.2f}%"
 total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
-# 4. 月份切換處理
+# === 3. 月份處理 ===
 if 'view_month' not in st.session_state.my_data:
     st.session_state.my_data['view_month'] = datetime.today().month
-    save_to_json(st.session_state.my_data)
-
 current_month_num = int(st.session_state.my_data['view_month'])
 current_month_div_amount = monthly_calendar[current_month_num]["amount"]
 current_month_div_str = f"${current_month_div_amount:,.0f}"
 div_sources = monthly_calendar[current_month_num]["sources"]
 sub_title = f"來自：{'、'.join([s.split(' ')[0] for s in div_sources])}" if div_sources else f"({current_month_num}月無配息預定)"
 
-# 5. 最後才渲染 HTML
+# === 4. 定義 HTML 變數 (這是你報錯的兇手，現在它絕對會被執行到) ===
 html_triple_pnl = f"""
 <div class="triple-box">
     <div class="triple-col">
@@ -639,6 +635,7 @@ html_triple_pnl = f"""
     </div>
 </div>
 """
+# === 5. 最後渲染 ===
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
 # === 💡 時光機按鈕與手動記錄區 ===
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
