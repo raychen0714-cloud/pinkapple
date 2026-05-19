@@ -763,7 +763,6 @@ st.markdown(html_triple_pnl, unsafe_allow_html=True)
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
 with col_m1:
     if st.button("◀️ 上月", use_container_width=True):
-        # 💡 按下按鈕後，直接修改資料庫並立刻存檔
         curr = st.session_state.my_data['view_month']
         st.session_state.my_data['view_month'] = curr - 1 if curr > 1 else 12
         save_to_json(st.session_state.my_data)
@@ -780,6 +779,23 @@ with col_m3:
         save_to_json(st.session_state.my_data)
         st.rerun()
 
+st.write("") # 稍微留白排版
+
+# 💡 新增：超方便的「一鍵入帳」按鈕！
+_, col_action, _ = st.columns([1, 2, 1])
+with col_action:
+    if current_month_div_amount > 0:
+        if st.button(f"📥 一鍵將 {current_month_num} 月預估配息 (${current_month_div_amount:,.0f}) 存入總額", type="primary", use_container_width=True):
+            # 把當月預估金額自動加到總額裡
+            current_total = float(st.session_state.my_data.get('total_received_divs', 0.0))
+            st.session_state.my_data['total_received_divs'] = current_total + float(current_month_div_amount)
+            save_to_json(st.session_state.my_data)
+            st.rerun()
+    else:
+        # 防呆機制：如果這個月沒錢領，按鈕反灰不能按
+        st.button(f"🚫 {current_month_num} 月無配息可存入", disabled=True, use_container_width=True)
+
+# 保留原本的手動修正區塊，萬一你不小心按到兩次，還是可以打開來手動扣回去
 with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
     col_adj1, col_adj2 = st.columns([3, 1])
     with col_adj1:
@@ -792,7 +808,7 @@ with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
     with col_adj2:
         st.write("") 
         st.write("")
-        if st.button("💾 更新總額", type="primary", use_container_width=True):
+        if st.button("💾 更新總額", type="secondary", use_container_width=True):
             st.session_state.my_data['total_received_divs'] = new_total_divs
             save_to_json(st.session_state.my_data)
             st.rerun()
