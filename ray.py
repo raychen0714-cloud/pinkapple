@@ -232,7 +232,9 @@ def save_edits():
             "cost": c_val,
             "alert_high": item.get('alert_high', 0.0),
             "alert_low": item.get('alert_low', 0.0),
-            "pledged_shares": item.get('pledged_shares', 0.0)
+            "pledged_shares": item.get('pledged_shares', 0.0),
+            # 💡 修正 2：【重大修復】必須把「自訂領息張數」加進來一起存檔，否則會被系統當成垃圾洗掉！
+            "ex_div_shares_custom": item.get('ex_div_shares_custom', h_val)
         })
     st.session_state.my_data['etfs'] = temp_list
     save_to_json(st.session_state.my_data)
@@ -815,10 +817,11 @@ if st.session_state.show_calendar:
                     # 💡 1. 優先從你最核心的設定檔(item)裡抓出數值，如果沒有自訂過，就用原本的總庫存(holdings)
                     saved_val = float(item.get('ex_div_shares_custom', item['holdings']))
                     
+                    # 💡 修正 1：在標題裡面動態放入 item['name']，這樣你才知道在改誰！
                     new_val = st.number_input(
-                        "修正本次領息張數", 
+                        f"🎯 修正【{item['name']}】本次領息張數", 
                         min_value=0.0, 
-                        value=saved_val, 
+                        value=float(saved_val), 
                         step=1.0, 
                         key=f"edit_shares_{item['symbol']}"
                     )
