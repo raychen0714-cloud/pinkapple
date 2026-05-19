@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
+import twstock  # 記得在程式最上面補上這行
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -1388,7 +1389,7 @@ with bot_c3:
 
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
-    time.sleep(5)
+    time.sleep(30)
     # 💡 這裡也一樣，改成全域清除
     st.cache_data.clear()
     st.rerun()
