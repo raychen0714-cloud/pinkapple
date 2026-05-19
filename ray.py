@@ -1318,7 +1318,7 @@ with bot_c1:
         st.rerun()
 
 with bot_c2:
-    with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=True):
+    with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=False):
         st.markdown("#### ➕ 新增庫存標的 (股票/ETF)")
         
         if "add_name_bot" not in st.session_state: st.session_state.add_name_bot = ""
