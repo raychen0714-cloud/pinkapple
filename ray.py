@@ -715,7 +715,12 @@ total_pct_str = f"+{r_total:.2f}%" if r_total >= 0 else f"{r_total:.2f}%"
 total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
-current_month_num = datetime.today().month
+# 💡 新增：初始化「看板顯示月份」，預設為今天的真實月份
+if 'view_month' not in st.session_state:
+    st.session_state.view_month = datetime.today().month
+
+# 💡 將原本寫死的 datetime.today().month 改成讀取記憶體裡的 view_month
+current_month_num = st.session_state.view_month
 current_month_div_amount = monthly_calendar[current_month_num]["amount"]
 current_month_div_str = f"${current_month_div_amount:,.0f}"
 div_sources = monthly_calendar[current_month_num]["sources"]
@@ -751,6 +756,24 @@ html_triple_pnl = f"""
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
+
+# 💡 新增：專屬的黃金卡片月份切換器 (排版稍微往右邊對齊黃金卡片)
+_, _, col_m1, col_m2, col_m3, _ = st.columns([3, 1, 1, 1, 1, 1])
+with col_m1:
+    if st.button("◀️ 上月預估", use_container_width=True):
+        st.session_state.view_month = st.session_state.view_month - 1 if st.session_state.view_month > 1 else 12
+        st.rerun()
+with col_m2:
+    if st.button("🔄 回本月", use_container_width=True):
+        st.session_state.view_month = datetime.today().month
+        st.rerun()
+with col_m3:
+    if st.button("下月預估 ▶️", use_container_width=True):
+        st.session_state.view_month = st.session_state.view_month + 1 if st.session_state.view_month < 12 else 1
+        st.rerun()
+
+# 下面保留你原本的手動記錄展開區塊
+with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
 
 # 💡 在大看板下方加入一個摺疊選單，讓你隨時可以修改「總共領到配息金額」
 with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
