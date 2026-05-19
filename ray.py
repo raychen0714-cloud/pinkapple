@@ -582,13 +582,13 @@ c2.metric("投資總成本", f"${g_cost:,.0f}")
 c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
 st.write("---") 
 
-# === 💡 核心邏輯：先計算所有狀態變數，最後才產出 HTML ===
+# === 1. 核心損益計算 ===
 total_net_profit = df['損益'].sum() if not df.empty else 0
 r_total = (total_net_profit / g_cost * 100) if g_cost != 0 else 0
 prev_mkt = g_mkt - g_today_pnl
 today_pct = (g_today_pnl / prev_mkt * 100) if prev_mkt != 0 else 0
 
-# 設定顏色樣式變數
+# === 2. 定義顏色樣式變數 (確保每個變數都在這裡定義好) ===
 today_val_str = f"+{g_today_pnl:,.0f}" if g_today_pnl >= 0 else f"{g_today_pnl:,.0f}"
 today_pct_str = f"+{today_pct:.2f}%" if today_pct >= 0 else f"{today_pct:.2f}%"
 today_c_val = "triple-val-r" if g_today_pnl >= 0 else "triple-val-g"
@@ -599,7 +599,42 @@ total_pct_str = f"+{r_total:.2f}%" if r_total >= 0 else f"{r_total:.2f}%"
 total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
-# 最後，把這些定義好的變數丟進 HTML 進行渲染
+# === 3. 月份切換邏輯 (確保當前月份資料正確) ===
+if 'view_month' not in st.session_state.my_data:
+    st.session_state.my_data['view_month'] = datetime.today().month
+    save_to_json(st.session_state.my_data)
+
+current_month_num = int(st.session_state.my_data['view_month'])
+current_month_div_amount = monthly_calendar[current_month_num]["amount"]
+current_month_div_str = f"${current_month_div_amount:,.0f}"
+div_sources = monthly_calendar[current_month_num]["sources"]
+sub_title = f"來自：{'、'.join([s.split(' ')[0] for s in div_sources])}" if div_sources else f"({current_month_num}月無配息預定)"
+
+# === 4. 渲染看板 (所有變數都在上面定義過了，這裡絕對不會報錯) ===
+html_triple_pnl = f"""
+<div class="triple-box">
+    <div class="triple-col">
+        <div class="triple-title">今日損益</div>
+        <div class="{today_c_val}">{today_val_str}</div>
+        <div class="{today_c_pct}">{today_pct_str}</div>
+    </div>
+    <div class="triple-col">
+        <div class="triple-title">累積預估淨損益</div>
+        <div class="{total_c_val}">{total_val_str}</div>
+        <div class="{total_c_pct}">{total_pct_str}</div>
+    </div>
+    <div class="triple-col flash-gold-box">
+        <div class="triple-title" style="color: #b48608; margin-bottom: 5px;">⚡ {current_month_num} 月預估領息總額</div>
+        <div class="triple-val-gold">{current_month_div_str}</div>
+        <div class="triple-sub-gold">{sub_title}</div>
+    </div>
+    <div class="triple-col blue-box">
+        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總共領到配息金額</div>
+        <div class="triple-val-blue">${st.session_state.my_data.get('total_received_divs', 0):,.0f}</div>
+        <div class="triple-sub-blue">實際現金入帳總額</div>
+    </div>
+</div>
+"""
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
 # === 💡 時光機按鈕與手動記錄區 ===
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
