@@ -4,3 +4,4 @@ pandas
 streamlit-autorefresh
 lxml
 requests
+twstock
