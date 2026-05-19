@@ -3,8 +3,6 @@ import yfinance as yf
 import pandas as pd
 import json
 import os
-import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
@@ -18,22 +16,6 @@ st.markdown("""
     [data-testid="stMetricDelta"] svg { fill: red; }
     .stMetric { background-color: #f8f9fa; padding: 10px; border-radius: 10px; }
     
-    .news-box { background-color: #f0f7ff; border-left: 6px solid #4a90e2; padding: 20px; border-radius: 8px; margin-bottom: 25px; box-shadow: 1px 1px 4px rgba(0,0,0,0.05); }
-    .news-title { font-size: 20px; font-weight: bold; color: #1e3c72; margin-bottom: 15px; display: flex; align-items: center; }
-    .news-item { font-size: 16px; color: #333; margin-bottom: 12px; line-height: 1.5; font-weight: 500;}
-    .news-item a { text-decoration: none; color: #1e3c72; transition: color 0.2s;}
-    .news-item a:hover { text-decoration: underline; color: #d32f2f; }
-
-    /* 雙重雷達 */
-    .ex-div-box { background-color: #ffeaea; border: 1.5px solid #e06666; border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 15px; height: 115px; display: flex; flex-direction: column; justify-content: center; box-shadow: 1px 1px 3px rgba(0,0,0,0.05); overflow-y: auto;}
-    .ex-div-title { color: #cc0000; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
-    .ex-div-text { color: #783f04; font-size: 12px; font-weight: bold; line-height: 1.4; }
-    
-    .pay-div-box { background-color: #fff2cc; border: 1.5px solid #f6b26b; border-radius: 8px; padding: 10px; text-align: center; margin-bottom: 15px; height: 115px; display: flex; flex-direction: column; justify-content: center; box-shadow: 1px 1px 3px rgba(0,0,0,0.05); overflow-y: auto;}
-    .pay-div-title { color: #b45f06; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
-    .pay-div-text { color: #783f04; font-size: 12px; font-weight: bold; line-height: 1.4; }
-
-    /* 三拼損益與領息橫列大看板樣式 */
     .triple-box { background-color: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 15px; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.04); gap: 10px; }
     .triple-col { flex: 1 1 30%; min-width: 140px; text-align: center; padding: 10px 0; }
     .triple-title { font-size: 14px; color: #757575; font-weight: bold; margin-bottom: 5px; }
@@ -44,7 +26,6 @@ st.markdown("""
     .triple-pct-g { font-size: 14px; font-weight: bold; color: #2e7d32; margin-top: 5px; }
     .triple-sub-gold { font-size: 12px; font-weight: bold; color: #7f8c8d; margin-top: 5px; }
 
-    /* 閃電特效 */
     @keyframes lightning-strike {
         0% { box-shadow: 0 0 10px rgba(241, 196, 15, 0.5); background-color: #fffdf5; border-color: #f1c40f; transform: scale(1); }
         50% { box-shadow: 0 0 40px rgba(255, 235, 59, 1), inset 0 0 25px rgba(255, 235, 59, 0.9); background-color: #ffffe0; border-color: #ffeb3b; transform: scale(1.03); }
@@ -61,19 +42,6 @@ st.markdown("""
     .month-sources { font-size: 14px; color: #6c757d; }
     
     div.stButton > button { font-weight: bold; border-radius: 8px; }
-
-    .upcoming-box { background-color: #fff4e6; border: 1px solid #ffd8a8; border-radius: 8px; padding: 8px 10px; text-align: center; margin-bottom: 15px; box-shadow: 1px 1px 3px rgba(0,0,0,0.05); }
-    .upcoming-title { color: #d9480f; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
-    .upcoming-item { color: #862e01; font-size: 13px; font-weight: bold; margin-bottom: 2px; }
-    .upcoming-price { font-size: 11px; color: #888; }
-    
-    .calc-box { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;}
-    .calc-title { color: #495057; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
-    .calc-result-profit { font-size: 24px; font-weight: bold; color: #d32f2f; margin-top: 10px;}
-    .calc-result-loss { font-size: 24px; font-weight: bold; color: #388e3c; margin-top: 10px;}
-    .calc-result-info { font-size: 14px; color: #6c757d; margin-top: 5px;}
-    
-    /* 自動更新控制區樣式 */
     .auto-refresh-box { background-color: #f0f7ff; border: 1px solid #cce5ff; border-radius: 8px; padding: 15px; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
@@ -98,21 +66,16 @@ PASSIVE_ETFS = {
     "00751B": "00751B 元大AAA至A公司債", "00937B": "00937B 群益ESG投等債20+", "00772B": "00772B 中信高評級公司債",
     "00773B": "00773B 中信優先金融債", "00780B": "00780B 國泰A級金融債", "00795B": "00795B 中信美國公債20年",
     "2330": "2330 台積電", "2454": "2454 聯發科", "2317": "2317 鴻海",
-    # -- 新增清單區 --
     "00631L": "00631L 元大台灣50正2", "00673R": "00673R 期元大S&P原油反1", 
     "00632R": "00632R 元大台灣50反1", "009819": "009819 中信數據及電力", 
     "00712": "00712 復華富時不動產"
 }
 
 ACTIVE_ETFS = {
-    "00981A": "00981A 主動統一台股增長",
-    "00403A": "00403A 主動統一台股升級50",
-    "00999A": "00999A 主動野村臺灣動能",
-    "00401A": "00401A 主動摩根台灣鑫收",
-    "00992A": "00992A 主動群益科技創新",
-    "00400A": "00400A 主動國泰動能高息",
-    "00997A": "00997A 主動群益美國增長",
-    "00988A": "00988A 主動統一全球創新",
+    "00981A": "00981A 主動統一台股增長", "00403A": "00403A 主動統一台股升級50",
+    "00999A": "00999A 主動野村臺灣動能", "00401A": "00401A 主動摩根台灣鑫收",
+    "00992A": "00992A 主動群益科技創新", "00400A": "00400A 主動國泰動能高息",
+    "00997A": "00997A 主動群益美國增長", "00988A": "00988A 主動統一全球創新",
     "00994A": "00994A 主動第一金台股優",
 }
 
@@ -154,7 +117,6 @@ def load_settings():
     return {
         "etfs": [
             {"symbol": "00403A.TW", "name": "00403A 主動統一台股升級50", "holdings": 5.0, "cost": 10.01, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            {"symbol": "0050.TW", "name": "0050 元大台灣50", "holdings": 2.0, "cost": 90.58, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "0056.TW", "name": "0056 元大高股息", "holdings": 20.0, "cost": 38.87, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00878.TW", "name": "00878 國泰永續高股息", "holdings": 22.0, "cost": 24.60, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00891.TW", "name": "00891 中信關鍵半導體", "holdings": 10.0, "cost": 33.97, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
@@ -178,9 +140,14 @@ if 'watchlist' not in st.session_state.my_data:
 
 if 'pledge' not in st.session_state.my_data:
     st.session_state.my_data['pledge'] = {"borrowed_amount": 0}
+
+# 確保所有結構都有 pledged_shares 和 ex_div_shares_custom
 for etf in st.session_state.my_data['etfs']:
     if 'pledged_shares' not in etf:
         etf['pledged_shares'] = 0.0
+    if 'ex_div_shares_custom' not in etf:
+        etf['ex_div_shares_custom'] = etf['holdings']
+
 save_to_json(st.session_state.my_data)
 
 # --- 🚀 Callback 函數區 ---
@@ -204,7 +171,8 @@ def add_new_etf_bot():
         
         st.session_state.my_data['etfs'].append({
             "symbol": final_symbol, "name": new_name, 
-            "holdings": new_h, "cost": new_c, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0
+            "holdings": new_h, "cost": new_c, "alert_high": 0.0, "alert_low": 0.0, 
+            "pledged_shares": 0.0, "ex_div_shares_custom": new_h
         })
         save_to_json(st.session_state.my_data)
         
@@ -218,7 +186,7 @@ def delete_etf(index):
         st.session_state.my_data['etfs'].pop(index)
         save_to_json(st.session_state.my_data)
 
-# 💡 防禦修復：確保自訂領息張數在儲存時不會遺失
+# 🚀 終極防護：確保 save_edits 絕對不會把自訂張數洗掉
 def save_edits():
     temp_list = []
     for i, item in enumerate(st.session_state.my_data['etfs']):
@@ -232,7 +200,7 @@ def save_edits():
             "alert_high": item.get('alert_high', 0.0),
             "alert_low": item.get('alert_low', 0.0),
             "pledged_shares": item.get('pledged_shares', 0.0),
-            "ex_div_shares_custom": item.get('ex_div_shares_custom', h_val)
+            "ex_div_shares_custom": item.get('ex_div_shares_custom', h_val) # 核心釘死自訂張數
         })
     st.session_state.my_data['etfs'] = temp_list
     save_to_json(st.session_state.my_data)
@@ -307,7 +275,6 @@ def render_macro_cards(data_dict, region_prefix):
             st.markdown(html, unsafe_allow_html=True)
         idx += 1
 
-
 # --- 4. 核心數據計算 ---
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
@@ -324,7 +291,19 @@ def fetch_data(etf_list):
         try:
             tk = yf.Ticker(item['symbol'])
             hist = tk.history(period='1y') 
-            if hist.empty: continue
+            
+            # 🚀 終極防護：如果 Yahoo 抓不到這檔資料，直接塞一筆假資料佔位，絕對不讓 UI 死機
+            if hist.empty:
+                results.append({
+                    "代號": item['symbol'], "名稱": item['name'], "現價": item['cost'], "均價": item['cost'],
+                    "張數": item['holdings'], "市值": item['holdings'] * 1000 * item['cost'], "損益": 0, "報酬率": 0,
+                    "單次預估領息": 0, "每股配息": 0, "最新公告除息日": "暫無資料", "預估發放日": "暫無資料", "已公告": False, "最新填息紀錄": "-"
+                })
+                tech_results.append({
+                    "ETF 名稱": f"⚪ {item['name']}", "股票張數": item['holdings'], "現價": item['cost'], "均價": item['cost'],
+                    "今日損益": "+$0", "今日漲跌(點)": "+0.00", "今日漲跌幅": "+0.00%", "今日交易量(萬張)": "無資料"
+                })
+                continue # 安全跳過後續計算，但保留了這列資料！
             
             rt_curr = tk.fast_info.get('lastPrice')
             curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
@@ -392,6 +371,7 @@ def fetch_data(etf_list):
             if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
+            # 從核心設定讀取真正安全的 custom 數值
             ex_shares_setting = float(item.get('ex_div_shares_custom', item['holdings']))
             calc_div_shares = ex_shares_setting * 1000 
 
@@ -470,7 +450,18 @@ def fetch_data(etf_list):
                 "今日交易量(萬張)": vol_wan_str
             })
             
-        except Exception as e: continue
+        except Exception as e:
+            # 🚀 雙重防護，連外層發生不可預期錯誤也無條件塞假資料保命
+            results.append({
+                "代號": item['symbol'], "名稱": item['name'], "現價": item['cost'], "均價": item['cost'],
+                "張數": item['holdings'], "市值": item['holdings'] * 1000 * item['cost'], "損益": 0, "報酬率": 0,
+                "單次預估領息": 0, "每股配息": 0, "最新公告除息日": "暫無資料", "預估發放日": "暫無資料", "已公告": False, "最新填息紀錄": "-"
+            })
+            tech_results.append({
+                "ETF 名稱": f"⚪ {item['name']}", "股票張數": item['holdings'], "現價": item['cost'], "均價": item['cost'],
+                "今日損益": "+$0", "今日漲跌(點)": "+0.00", "今日漲跌幅": "+0.00%", "今日交易量(萬張)": "無資料"
+            })
+            continue
         
     return pd.DataFrame(results), pd.DataFrame(tech_results), total_mkt, total_cost, total_div, total_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar
 
@@ -619,13 +610,13 @@ if st.session_state.show_calendar:
                 if item['name'] in data["sources"]:
                     saved_val = float(item.get('ex_div_shares_custom', item['holdings']))
                     
-                    # 💡 防禦修復：明確標示名稱
+                    # 🚀 強制綁定顯示 ETF 名稱，不再無名氏！
                     new_val = st.number_input(
-                        f"修正【{item['name']}】本次領息張數", 
+                        f"✏️ 修正【{item['name']}】本次領息張數", 
                         min_value=0.0, 
                         value=saved_val, 
                         step=1.0, 
-                        key=f"edit_shares_{item['symbol']}"
+                        key=f"edit_shares_cal_{item['symbol']}"
                     )
                     
                     if new_val != saved_val:
@@ -690,10 +681,8 @@ if st.session_state.show_tech:
     if not df.empty:
         st.markdown("#### 📡 庫存即時股價監控")
         
-        # 💡 防禦修復：安全的 dataframe 上色邏輯
         def style_tech_dataframe(row):
             styles = [''] * len(row)
-            
             for i, col in enumerate(row.index):
                 val = row[col]
                 if isinstance(val, str):
@@ -701,23 +690,19 @@ if st.session_state.show_tech:
                         styles[i] = 'color: #d32f2f; font-weight: bold;'
                     elif val.startswith('-'):
                         styles[i] = 'color: #388e3c; font-weight: bold;'
-            
             try:
                 price_idx = row.index.get_loc('現價')
                 curr_price = float(row['現價'])
                 avg_cost = float(row['均價'])
-                
                 if curr_price >= avg_cost:
                     styles[price_idx] = 'color: #d32f2f; font-weight: bold;'
                 else:
                     styles[price_idx] = 'color: #388e3c; font-weight: bold;'
             except:
                 pass
-                
             return styles
 
         styled_df_tech = df_tech.style.apply(style_tech_dataframe, axis=1)
-
         st.dataframe(
             styled_df_tech,
             column_config={
@@ -740,9 +725,10 @@ if st.session_state.show_holdings:
         st.markdown("#### 📊 持股動態明細")
         for idx, item in enumerate(st.session_state.my_data['etfs']):
             
-            # 💡 防禦修復：萬一 DataFrame 裡因為斷線沒抓到該檔股票，直接跳過以免當機
+            # 🚀 終極防護：若該檔股票在 df 中遺失，安全跳過，絕不死機
             filtered_df = df[df['代號'] == item['symbol']]
             if filtered_df.empty:
+                st.warning(f"⚠️ 暫時無法取得【{item['name']}】的即時報價，請稍後重整。")
                 continue
                 
             row = filtered_df.iloc[0]
@@ -755,7 +741,6 @@ if st.session_state.show_holdings:
                 my_cost_val = 0.0
                 
             p_color = "red" if curr_price_val >= my_cost_val else "green"
-            
             roi_str = f"{row['報酬率']:+.2f}%"
             status_badge = "✅ 已公告" if row['已公告'] else "⏳ 依前次估算"
             
@@ -775,13 +760,13 @@ if st.session_state.show_holdings:
                     
                     saved_val = st.session_state['ex_div_shares_v2'].get(item['symbol'], float(item.get('ex_div_shares_custom', item['holdings'])))
                     
-                    # 💡 防禦修復：明確標示名稱
+                    # 🚀 強制綁定顯示 ETF 名稱，不再無名氏！
                     new_val = st.number_input(
                         f"✏️ 修正【{item['name']}】本期領息張數 (目前設定: {saved_val} 張)",
                         min_value=0.0,
                         value=float(saved_val),
                         step=1.0,
-                        key=f"detail_mod_{item['symbol']}"
+                        key=f"detail_mod_hold_{item['symbol']}"
                     )
                     if new_val != saved_val:
                         st.session_state['ex_div_shares_v2'][item['symbol']] = new_val
@@ -818,29 +803,16 @@ if st.session_state.show_constituents:
             
             comp_data = ETF_CONSTITUENTS_DB.get(sym, [{"name": "其他成分股", "weight": 100.0}])
             df_comp = pd.DataFrame(comp_data)
-            
             df_comp['label'] = df_comp['weight'].apply(lambda w: f"{w:.1f}%" if w >= 2.0 else "")
             
             base = alt.Chart(df_comp).encode(
                 theta=alt.Theta("weight:Q", stack=True),
-                color=alt.Color("name:N", 
-                                sort=alt.EncodingSortField(field="weight", op="sum", order="descending"), 
-                                legend=alt.Legend(title=None, orient="right", labelFontSize=12)),
-                tooltip=[
-                    alt.Tooltip("name:N", title="成分股"),
-                    alt.Tooltip("weight:Q", title="權重 (%)", format=".2f")
-                ]
+                color=alt.Color("name:N", sort=alt.EncodingSortField(field="weight", op="sum", order="descending"), legend=alt.Legend(title=None, orient="right", labelFontSize=12)),
+                tooltip=[alt.Tooltip("name:N", title="成分股"), alt.Tooltip("weight:Q", title="權重 (%)", format=".2f")]
             )
-            
             pie = base.mark_arc(outerRadius=100, innerRadius=0)
-            
-            text = base.mark_text(radius=125, size=13, fontWeight="bold", color="#333333").encode(
-                text="label:N"
-            )
-            
-            chart = alt.layer(pie, text).properties(
-                height=280
-            ).configure_view(strokeWidth=0)
+            text = base.mark_text(radius=125, size=13, fontWeight="bold", color="#333333").encode(text="label:N")
+            chart = alt.layer(pie, text).properties(height=280).configure_view(strokeWidth=0)
             
             with c_cols[idx % 3]:
                 st.markdown(f"<div style='font-weight:900; color:#1e3c72; font-size:16px; margin-bottom:5px; margin-top:15px;'>🛡️ {name}</div>", unsafe_allow_html=True)
@@ -877,9 +849,9 @@ if st.session_state.show_pledge:
                 if not filtered_df.empty:
                     curr_p = filtered_df['現價'].values[0]
                 else:
-                    curr_p = 0
+                    curr_p = item['cost'] # 🚀 防禦機制：若斷線抓無現價，直接抓成本頂替，不讓維持率壞掉
             except:
-                curr_p = 0
+                curr_p = item['cost']
                 
             p_mkt = p_shares * 1000 * curr_p
             p_limit = p_mkt * 0.6  
@@ -887,12 +859,8 @@ if st.session_state.show_pledge:
             total_borrowable += p_limit
             
             pledge_df_list.append({
-                "ETF 名稱": name,
-                "總庫存 (張)": h_total,
-                "質押張數": p_shares,
-                "現價": round(curr_p, 2),
-                "質押市值 (元)": round(p_mkt, 0),
-                "可借上限 (60%)": round(p_limit, 0) 
+                "ETF 名稱": name, "總庫存 (張)": h_total, "質押張數": p_shares,
+                "現價": round(curr_p, 2), "質押市值 (元)": round(p_mkt, 0), "可借上限 (60%)": round(p_limit, 0) 
             })
             
         pledge_df = pd.DataFrame(pledge_df_list)
@@ -944,7 +912,6 @@ if st.session_state.show_pledge:
     st.write("---")
 
 # --- 📜 展開持股歷史情報 ---
-# 💡 防禦修復：徹底斬斷 Pandas 時空與假日錯亂
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_daily_history_masterpiece(symbol, days):
     try:
@@ -968,7 +935,7 @@ def fetch_daily_history_masterpiece(symbol, days):
         
         df_clean['Date'] = pd.to_datetime(df_clean['Date'], utc=True).dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
         
-        # 物理超渡：無情砍掉六、日
+        # 🚀 物理超渡：無情砍掉六、日
         df_clean = df_clean[df_clean['Date'].dt.weekday < 5]
         
         if 'Volume' in df_clean.columns:
@@ -1099,8 +1066,6 @@ with bot_c3:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-# 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
     time.sleep(5)
     fetch_data.clear()
