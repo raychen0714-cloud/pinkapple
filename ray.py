@@ -1226,11 +1226,11 @@ if st.session_state.show_history:
                 hist_data = fetch_daily_history_masterpiece(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
-                    html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
+                    # 💡 修正 1：外層容器加入 flex-wrap: nowrap 避免換行，並增加 padding-bottom 留空間給捲動條
+                    html_cards = "<div style='display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 10px; padding: 10px 5px 15px 5px; -webkit-overflow-scrolling: touch;'>"
                     week_dict = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
                     
                     for date, row in hist_data.iloc[::-1].iterrows():
-                        # 💡 升級 3：把星期幾加回來，徹底驗證六日已經消失！
                         date_str = f"{date.strftime('%m/%d')} ({week_dict[date.weekday()]})" 
                         diff_val = row['漲跌']
                         pct_val = row['漲跌幅']
@@ -1242,23 +1242,18 @@ if st.session_state.show_history:
                         else:
                             color, bg_color, sign = "#555555", "#f8f9fa", ""
                             
-                        # 卡片寬度稍微從 75px 放寬到 85px 以容納星期幾的字眼
+                        # 💡 修正 2：卡片加入 flex: 0 0 auto; 確保即使資料再多，卡片也絕對不會被擠壓變形
+                        # 💡 修正 3：稍微加寬 min-width 到 90px，讓排版更寬裕舒適
                         html_cards += f"""
-                        <div style='min-width: 85px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
-                            <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
-                            <div style='font-size: 13px; color: #111; font-weight: bold; margin-bottom: 2px;'>{row['Close']:.2f}</div>
-                            <div style='font-size: 14px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
-                            <div style='font-size: 11px; font-weight: bold; color: {color};'>{sign}{pct_val:.2f}%</div>
+                        <div style='flex: 0 0 auto; min-width: 90px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 1px 1px 4px rgba(0,0,0,0.08);'>
+                            <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; margin-bottom: 6px;'>{date_str}</div>
+                            <div style='font-size: 14px; color: #111; font-weight: bold; margin-bottom: 4px;'>{row['Close']:.2f}</div>
+                            <div style='font-size: 15px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
+                            <div style='font-size: 12px; font-weight: bold; color: {color}; margin-top: 2px;'>{sign}{pct_val:.2f}%</div>
                         </div>
                         """
                     html_cards += "</div>"
                     st.markdown(html_cards, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ 暫時無法取得該標的歷史資料。")
-    else:
-        st.info("💡 請先在下方「標的管理」新增庫存。")
-        
-    st.write("---")
 
 # 🎯 最底層操作列 (手動更新 + 標的管理 + 自動更新開關)
 bot_c1, bot_c2, bot_c3 = st.columns([2, 5, 3])
