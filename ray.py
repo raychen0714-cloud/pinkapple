@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
+import twstock  # 記得在程式最上面補上這行
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -493,6 +494,8 @@ def fetch_watchlist_dividend(wl_list):
     return pd.DataFrame(results)
 
 # --- 4. 核心數據計算 ---
+import twstock  # 💡 新增這一行確保 twstock 有被載入
+
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
     results, tech_results = [], []
@@ -511,12 +514,23 @@ def fetch_data(etf_list):
             hist = tk.history(period='1y') 
             if hist.empty: continue
             
-            rt_curr = tk.fast_info.get('lastPrice')
-            curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
+            # === ✨ 加入 twstock 即時報價與 yfinance 備用機制 ===
+            clean_sym = item['symbol'].replace('.TW', '') # 拿掉 .TW 給 twstock 用
+            rt_data = twstock.realtime.get(clean_sym)
             
-            rt_prev = tk.fast_info.get('previousClose')
-            prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
-            
+            if rt_data and rt_data['success']:
+                # 如果 twstock 抓取成功，使用台灣證交所即時現價
+                curr_p = float(rt_data['realtime']['latest_trade_price'])
+                # twstock 即時報價沒有昨收，只能用 yfinance 的歷史資料補
+                prev_close = hist['Close'].iloc[-1] if not hist.empty else curr_p
+            else:
+                # 如果 twstock 抓不到 (例如新掛牌、被鎖IP)，自動退回 yfinance 的資料
+                rt_curr = tk.fast_info.get('lastPrice')
+                curr_p = rt_curr if rt_curr is not None else (hist['Close'].iloc[-1] if not hist.empty else item['cost'])
+                rt_prev = tk.fast_info.get('previousClose')
+                prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
+            # === ✨ 替換結束 ===
+
             rt_dh = tk.fast_info.get('dayHigh')
             day_high = rt_dh if rt_dh is not None else hist['High'].iloc[-1]
             
@@ -588,9 +602,6 @@ def fetch_data(etf_list):
             if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
-            # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
-            # 💡 優先讀取檔案裡存下來的自訂張數，都沒有的話才用預設庫存張數
-            # 💡 直接從核心設定檔讀取 custom 數值，如果沒有改過，就用原本庫存的 holdings
             ex_shares_setting = float(item.get('ex_div_shares_custom', item['holdings']))
             calc_div_shares = ex_shares_setting * 1000  # 換算成股數
 
@@ -601,10 +612,8 @@ def fetch_data(etf_list):
                 
                 pay_date_obj = datetime.strptime(pay_date, '%Y-%m-%d')
                 days_diff_pay = (pay_date_obj.date() - today.date()).days
-                # 領息雷達同步改用修正後的張數計算
                 if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
 
-            # 💡 讓 1~12 月領息日曆也全自動同步採用你修正後的除息張數計算
             if div_amount > 0 and calc_div_shares > 0:
                 explicit_pay_month = None
                 if is_announced and pay_date != "待官方公告":
@@ -647,7 +656,6 @@ def fetch_data(etf_list):
             except Exception:
                 pass
 
-            # 總預估領息金額改用修正後的張數累加
             total_mkt += mkt_val; total_cost += cost_val; total_div += (calc_div_shares * div_amount)
             
             results.append({
@@ -658,7 +666,6 @@ def fetch_data(etf_list):
                 "最新填息紀錄": fill_status 
             })
             
-            # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
             today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
@@ -1395,7 +1402,7 @@ with bot_c3:
 
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
-    time.sleep(5)
+    time.sleep(30)
     # 💡 這裡也一樣，改成全域清除
     st.cache_data.clear()
     st.rerun()
