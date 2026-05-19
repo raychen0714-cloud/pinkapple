@@ -1163,40 +1163,48 @@ if st.session_state.show_pledge:
 # --- 📜 展開持股歷史情報 ---
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_daily_history_bulletproof(symbol, days):
+def fetch_daily_history_masterpiece(symbol, days):
     try:
         if not symbol: return pd.DataFrame()
         
-        # 改回最基礎的 Ticker.history，避開 yf.download 的多層級欄位地雷
-        tk = yf.Ticker(symbol)
-        hist = tk.history(period="3mo")
-        if hist.empty: return pd.DataFrame()
+        # 💡 升級 1：抓取 6 個月，確保介面上設定 100 天時資料絕對夠用
+        data = yf.download(symbol, period="6mo", progress=False)
+        if data.empty: return pd.DataFrame()
         
-        hist = hist.reset_index()
-        # 確保日期欄位名稱正確
-        hist.rename(columns={hist.columns[0]: 'Date'}, inplace=True)
-        
-        # 💡 終極防護 1：強制轉為台灣時區，並剝離時間只留純日期
-        hist['Date'] = pd.to_datetime(hist['Date'], utc=True).dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
-        
-        # 💡 終極防護 2：物理超渡法！無情砍掉星期六 (5) 與星期日 (6)，直接拒絕 Yahoo 的假日假資料
-        hist = hist[hist['Date'].dt.weekday < 5]
-        
-        # 💡 終極防護 3：平日如果遇到國定假日沒開盤 (成交量=0) 也砍掉
-        if 'Volume' in hist.columns:
-            hist['Volume'] = pd.to_numeric(hist['Volume'], errors='coerce').fillna(0)
-            hist = hist[hist['Volume'] > 0]
+        # 💡 升級 2：完美解除新版 yfinance 的 MultiIndex 地雷
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
             
-        # 💡 終極防護 4：確保同一天絕對只有最後一筆收盤價
-        hist = hist.drop_duplicates(subset=['Date'], keep='last')
+        data.columns = [str(c).strip().capitalize() for c in data.columns]
+        if 'Close' not in data.columns: return pd.DataFrame()
         
-        # 排序並計算真正的漲跌
-        hist = hist.sort_values('Date')
-        hist['漲跌'] = hist['Close'].diff()
-        hist['漲跌幅'] = hist['Close'].pct_change() * 100
+        df_clean = data[['Close']].copy()
+        if 'Volume' in data.columns:
+            df_clean['Volume'] = data['Volume']
+            
+        df_clean = df_clean.reset_index()
+        df_clean.rename(columns={df_clean.columns[0]: 'Date'}, inplace=True)
         
-        hist.set_index('Date', inplace=True)
-        return hist.dropna(subset=['漲跌']).tail(days)
+        # 💡 時區標準化，只留純日期
+        df_clean['Date'] = pd.to_datetime(df_clean['Date'], utc=True).dt.tz_convert('Asia/Taipei').dt.tz_localize(None).dt.normalize()
+        
+        # 💡 物理超渡 1：無情砍掉六、日
+        df_clean = df_clean[df_clean['Date'].dt.weekday < 5]
+        
+        # 💡 物理超渡 2：砍掉零成交量 (對付國定假日假資料)
+        if 'Volume' in df_clean.columns:
+            df_clean['Volume'] = pd.to_numeric(df_clean['Volume'], errors='coerce').fillna(0)
+            df_clean = df_clean[df_clean['Volume'] > 0]
+            
+        df_clean = df_clean.drop_duplicates(subset=['Date'], keep='last')
+        df_clean = df_clean.sort_values('Date')
+        
+        # 計算漲跌
+        df_clean['漲跌'] = df_clean['Close'].diff()
+        df_clean['漲跌幅'] = df_clean['Close'].pct_change() * 100
+        
+        df_clean.set_index('Date', inplace=True)
+        return df_clean.dropna(subset=['漲跌']).tail(days)
     except Exception as e:
         return pd.DataFrame()
 
@@ -1215,12 +1223,15 @@ if st.session_state.show_history:
         
         if selected_symbol:
             with st.spinner("載入中..."):
-                hist_data = fetch_daily_history_bulletproof(selected_symbol, lookback_days)
+                hist_data = fetch_daily_history_masterpiece(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
                     html_cards = "<div style='display: flex; overflow-x: auto; gap: 8px; padding: 10px 0;'>"
+                    week_dict = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
+                    
                     for date, row in hist_data.iloc[::-1].iterrows():
-                        date_str = date.strftime('%m/%d') 
+                        # 💡 升級 3：把星期幾加回來，徹底驗證六日已經消失！
+                        date_str = f"{date.strftime('%m/%d')} ({week_dict[date.weekday()]})" 
                         diff_val = row['漲跌']
                         pct_val = row['漲跌幅']
                         
@@ -1231,8 +1242,9 @@ if st.session_state.show_history:
                         else:
                             color, bg_color, sign = "#555555", "#f8f9fa", ""
                             
+                        # 卡片寬度稍微從 75px 放寬到 85px 以容納星期幾的字眼
                         html_cards += f"""
-                        <div style='min-width: 75px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
+                        <div style='min-width: 85px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 6px 2px; text-align: center; flex-shrink: 0; box-shadow: 1px 1px 3px rgba(0,0,0,0.05);'>
                             <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 3px; margin-bottom: 4px;'>{date_str}</div>
                             <div style='font-size: 13px; color: #111; font-weight: bold; margin-bottom: 2px;'>{row['Close']:.2f}</div>
                             <div style='font-size: 14px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
