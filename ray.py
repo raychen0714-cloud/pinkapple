@@ -8,7 +8,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
-import twstock  # 記得在程式最上面補上這行
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -83,7 +82,7 @@ st.markdown("""
     /* 自動更新控制區樣式 */
     .auto-refresh-box { background-color: #f0f7ff; border: 1px solid #cce5ff; border-radius: 8px; padding: 15px; text-align: center; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # --- 2. 系統設定與資料庫 ---
 SETTINGS_FILE = 'settings.json'
@@ -494,8 +493,6 @@ def fetch_watchlist_dividend(wl_list):
     return pd.DataFrame(results)
 
 # --- 4. 核心數據計算 ---
-import twstock  # 💡 新增這一行確保 twstock 有被載入
-
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
     results, tech_results = [], []
@@ -514,23 +511,12 @@ def fetch_data(etf_list):
             hist = tk.history(period='1y') 
             if hist.empty: continue
             
-            # === ✨ 加入 twstock 即時報價與 yfinance 備用機制 ===
-            clean_sym = item['symbol'].replace('.TW', '') # 拿掉 .TW 給 twstock 用
-            rt_data = twstock.realtime.get(clean_sym)
+            rt_curr = tk.fast_info.get('lastPrice')
+            curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
             
-            if rt_data and rt_data['success']:
-                # 如果 twstock 抓取成功，使用台灣證交所即時現價
-                curr_p = float(rt_data['realtime']['latest_trade_price'])
-                # twstock 即時報價沒有昨收，只能用 yfinance 的歷史資料補
-                prev_close = hist['Close'].iloc[-1] if not hist.empty else curr_p
-            else:
-                # 如果 twstock 抓不到 (例如新掛牌、被鎖IP)，自動退回 yfinance 的資料
-                rt_curr = tk.fast_info.get('lastPrice')
-                curr_p = rt_curr if rt_curr is not None else (hist['Close'].iloc[-1] if not hist.empty else item['cost'])
-                rt_prev = tk.fast_info.get('previousClose')
-                prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
-            # === ✨ 替換結束 ===
-
+            rt_prev = tk.fast_info.get('previousClose')
+            prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
+            
             rt_dh = tk.fast_info.get('dayHigh')
             day_high = rt_dh if rt_dh is not None else hist['High'].iloc[-1]
             
@@ -1113,7 +1099,7 @@ if st.session_state.show_holdings:
                     st.markdown(f"本期預估領息金額: :orange[**${row['單次預估領息']:,.0f}**]")
                     st.caption(f"📅 除息日期: {row['最新公告除息日']} ({status_badge})")
     else:
-        st.info("⚠️ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
+        st.info("─ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
     st.write("---")
 
 # --- 🧩 展開ETF成份股 ---
@@ -1157,7 +1143,7 @@ if st.session_state.show_constituents:
                 st.markdown(f"<div style='font-weight:900; color:#1e3c72; font-size:16px; margin-bottom:5px; margin-top:15px;'>🛡️ {name}</div>", unsafe_allow_html=True)
                 st.altair_chart(chart, use_container_width=True)
     else:
-        st.info("⚠️ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
+        st.info("─ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
     st.write("---")
 
 # --- 🏦 展開質押專區 ---
@@ -1247,7 +1233,7 @@ if st.session_state.show_pledge:
             save_to_json(st.session_state.my_data)
             st.rerun()
     else:
-        st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
+        st.info("─ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 
@@ -1402,7 +1388,7 @@ with bot_c3:
 
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
-    time.sleep(30)
+    time.sleep(5)
     # 💡 這裡也一樣，改成全域清除
     st.cache_data.clear()
     st.rerun()
