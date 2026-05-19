@@ -8,13 +8,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
-import twstock  # 💡 加上這行引入極速台股套件
-# 確保這兩行完全沒有開頭空白
-df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
-macro_data = fetch_macro_data()
-def fetch_macro_data():
-    # 這是備用的函數，確保程式不會報錯
-    return {"status": "ok"}
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -512,61 +505,180 @@ def fetch_data(etf_list):
     if 'ex_div_shares_v2' not in st.session_state:
         st.session_state['ex_div_shares_v2'] = {}
 
-    # 🚀【極速升級】：使用 twstock 批量抓取台股即時報價，突破 Yahoo 延遲！
-    tw_symbols = [item['symbol'].replace('.TW', '') for item in etf_list if item['symbol'].endswith('.TW')]
-    rt_tw_data = {}
-    if tw_symbols:
-        try:
-            # 一次性發送請求，瞬間拿回所有台股即時資料
-            tw_batch = twstock.realtime.get(tw_symbols)
-            if isinstance(tw_batch, dict):
-                for sym, info in tw_batch.items():
-                    # 確保抓取成功且當天已有成交價 (有時候剛開盤會是 '-')
-                    if info.get('success') and info['realtime']['latest_trade_price'] != '-':
-                        rt_tw_data[sym] = {
-                            'price': float(info['realtime']['latest_trade_price']),
-                            'vol': int(info['realtime'].get('accumulate_trade_volume', 0)),
-                            'high': float(info['realtime'].get('high', 0) if info['realtime'].get('high') != '-' else 0),
-                            'low': float(info['realtime'].get('low', 0) if info['realtime'].get('low') != '-' else 0)
-                        }
-        except Exception as e:
-            pass # 萬一 twstock 伺服器異常，會自動無縫退回使用 yfinance 備援
-
     for item in etf_list:
         try:
-            clean_sym = item['symbol'].replace('.TW', '')
             tk = yf.Ticker(item['symbol'])
             hist = tk.history(period='1y') 
             if hist.empty: continue
             
-            # 💡 價格雙引擎機制：優先讀取 twstock 極速報價，沒有的話才用 yfinance 補救
-            if clean_sym in rt_tw_data:
-                curr_p = rt_tw_data[clean_sym]['price']
-                vol = rt_tw_data[clean_sym]['vol']
-                day_high = rt_tw_data[clean_sym]['high']
-                day_low = rt_tw_data[clean_sym]['low']
-            else:
-                rt_curr = tk.fast_info.get('lastPrice')
-                curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
-                rt_vol = tk.fast_info.get('lastVolume')
-                vol = rt_vol if rt_vol is not None else hist['Volume'].iloc[-1]
-                rt_dh = tk.fast_info.get('dayHigh')
-                day_high = rt_dh if rt_dh is not None else hist['High'].iloc[-1]
-                rt_dl = tk.fast_info.get('dayLow')
-                day_low = rt_dl if rt_dl is not None else hist['Low'].iloc[-1]
+            rt_curr = tk.fast_info.get('lastPrice')
+            curr_p = rt_curr if rt_curr is not None else hist['Close'].iloc[-1]
             
-            # 昨日收盤價維持使用 yfinance 提供 (twstock realtime API 本身無昨日收盤欄位)
             rt_prev = tk.fast_info.get('previousClose')
             prev_close = rt_prev if rt_prev is not None else (hist['Close'].iloc[-2] if len(hist) >= 2 else curr_p)
             
-            # ==========================================
-            # 下方繼續保留你原本的：
-            # year_high = ...
-            # year_low = ...
-            # 如果 curr_p > prev_close ...
-            # ==========================================
+            rt_dh = tk.fast_info.get('dayHigh')
+            day_high = rt_dh if rt_dh is not None else hist['High'].iloc[-1]
+            
+            rt_dl = tk.fast_info.get('dayLow')
+            day_low = rt_dl if rt_dl is not None else hist['Low'].iloc[-1]
+            
+            rt_vol = tk.fast_info.get('lastVolume')
+            vol = rt_vol if rt_vol is not None else hist['Volume'].iloc[-1]
+            
+            year_high = tk.fast_info.get('yearHigh', 0)
+            year_low = tk.fast_info.get('yearLow', 0)
 
+            if curr_p > prev_close:
+                status_light = "🔴"
+            elif curr_p < prev_close:
+                status_light = "🟢"
+            else:
+                status_light = "⚪"
+            display_name = f"{status_light} {item['name']}"
 
+            shares = item['holdings'] * 1000
+            mkt_val = shares * curr_p
+            cost_val = shares * item['cost']
+            
+            # 券商真實成本估算 (扣除手續費與證交稅) 
+            sell_cost_estimate = mkt_val * 0.00235
+            profit = mkt_val - cost_val - sell_cost_estimate
+            roi = (profit / cost_val * 100) if cost_val != 0 else 0
+            
+            # 今日漲跌與損益計算
+            today_diff = curr_p - prev_close
+            today_profit = shares * today_diff
+            today_pct_change = (today_diff / prev_close * 100) if prev_close else 0
+            
+            total_today_pnl += today_profit
+            today_pnl_str = f"+${today_profit:,.0f}" if today_profit >= 0 else f"-${abs(today_profit):,.0f}"
+            today_pct_str = f"+{today_pct_change:.2f}%" if today_pct_change >= 0 else f"{today_pct_change:.2f}%"
+
+            a_high = float(item.get('alert_high', 0.0))
+            a_low = float(item.get('alert_low', 0.0))
+            if a_high > 0 and curr_p >= a_high:
+                price_alerts.append({"name": item['name'], "price": curr_p, "target": a_high, "type": "high"})
+            if a_low > 0 and curr_p <= a_low:
+                price_alerts.append({"name": item['name'], "price": curr_p, "target": a_low, "type": "low"})
+
+            is_announced, div_amount, ex_date, pay_date = False, 0, "待官方公告", "待官方公告"
+            
+            cfg = DIVIDEND_DB.get(item['symbol'])
+            if cfg:
+                div_amount = cfg['v']
+                ex_date = cfg['d']
+                pay_date = cfg['p']
+                is_announced = True
+            else:
+                actions = tk.actions
+                if not actions.empty:
+                    latest = actions.sort_index(ascending=False).head(1)
+                    div_amount = float(latest['Dividends'].values[0]) 
+                    last_ex_date_obj = latest.index[0].replace(tzinfo=None)
+                    
+                    ex_date = last_ex_date_obj.strftime('%Y-%m-%d')
+                    pay_date = (last_ex_date_obj + timedelta(days=28)).strftime('%Y-%m-%d') 
+                    
+                    if last_ex_date_obj.date() >= today.date():
+                        is_announced = True  # 未來即將發生的除息
+
+            est_yield = 0.0
+            months_to_pay = DIVIDEND_SCHEDULE.get(item['symbol'], [])
+            if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
+                est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
+
+            # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
+            # 💡 優先讀取檔案裡存下來的自訂張數，都沒有的話才用預設庫存張數
+            # 💡 直接從核心設定檔讀取 custom 數值，如果沒有改過，就用原本庫存的 holdings
+            ex_shares_setting = float(item.get('ex_div_shares_custom', item['holdings']))
+            calc_div_shares = ex_shares_setting * 1000  # 換算成股數
+
+            if is_announced:
+                ex_date_obj = datetime.strptime(ex_date, '%Y-%m-%d')
+                days_diff_ex = (ex_date_obj.date() - today.date()).days
+                if 0 <= days_diff_ex <= 20: radar_ex.append({"symbol": item['symbol'].split('.')[0], "date": ex_date, "days": days_diff_ex})
+                
+                pay_date_obj = datetime.strptime(pay_date, '%Y-%m-%d')
+                days_diff_pay = (pay_date_obj.date() - today.date()).days
+                # 領息雷達同步改用修正後的張數計算
+                if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
+
+            # 💡 讓 1~12 月領息日曆也全自動同步採用你修正後的除息張數計算
+            if div_amount > 0 and calc_div_shares > 0:
+                explicit_pay_month = None
+                if is_announced and pay_date != "待官方公告":
+                    explicit_pay_month = datetime.strptime(pay_date, '%Y-%m-%d').month
+                    monthly_calendar[explicit_pay_month]["amount"] += (calc_div_shares * div_amount)
+                    if item['name'] not in monthly_calendar[explicit_pay_month]["sources"]:
+                        monthly_calendar[explicit_pay_month]["sources"].append(item['name'])
+
+                for m in months_to_pay:
+                    pay_m = m + 1 if m < 12 else 1
+                    if pay_m != explicit_pay_month:
+                        monthly_calendar[pay_m]["amount"] += (calc_div_shares * div_amount)
+                        if item['name'] not in monthly_calendar[pay_m]["sources"]:
+                            monthly_calendar[pay_m]["sources"].append(item['name'])
+
+            fill_status = "-"
+            try:
+                divs = tk.dividends
+                if not divs.empty:
+                    now_ts = pd.Timestamp.now(tz=divs.index.tzinfo) if divs.index.tzinfo else pd.Timestamp.now()
+                    past_divs = divs[divs.index < now_ts].sort_index(ascending=False)
+                    
+                    if not past_divs.empty:
+                        last_ex_date = past_divs.index[0]
+                        pre_ex = hist[hist.index < last_ex_date]
+                        post_ex = hist[hist.index >= last_ex_date]
+                        
+                        if not pre_ex.empty and not post_ex.empty:
+                            target_price = pre_ex['Close'].iloc[-1]
+                            filled = False
+                            t_days = 0
+                            for d, r in post_ex.iterrows():
+                                t_days += 1
+                                if r['High'] >= target_price:
+                                    fill_status = f"{d.month}/{d.day} 填息完成 ({t_days}天)"
+                                    filled = True
+                                    break
+                            if not filled:
+                                fill_status = f"未填息 ({t_days}天)"
+            except Exception:
+                pass
+
+            # 總預估領息金額改用修正後的張數累加
+            total_mkt += mkt_val; total_cost += cost_val; total_div += (calc_div_shares * div_amount)
+            
+            results.append({
+                "代號": item['symbol'], "名稱": item['name'], "現價": curr_p, "均價": item['cost'],
+                "張數": item['holdings'], "市值": mkt_val, "損益": profit, "報酬率": roi,
+                "單次預估領息": calc_div_shares * div_amount, "每股配息": div_amount,
+                "最新公告除息日": ex_date, "預估發放日": pay_date, "已公告": is_announced,
+                "最新填息紀錄": fill_status 
+            })
+            
+            # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
+            today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
+            vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
+
+            tech_results.append({
+                "ETF 名仙": display_name,
+                "股票張數": item['holdings'], 
+                "現價": round(curr_p, 2),
+                "均價": item['cost'],
+                "今日損益": today_pnl_str,
+                "今日漲跌(點)": today_diff_str,
+                "今日漲跌幅": today_pct_str, 
+                "今日交易量(萬張)": vol_wan_str
+            })
+            
+        except Exception as e: continue
+        
+    return pd.DataFrame(results), pd.DataFrame(tech_results), total_mkt, total_cost, total_div, total_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar
+
+df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
+macro_data = fetch_macro_data()
 
 # --- 5. 介面呈現 ---
 st.title("📈 實戰資產戰情室")
@@ -585,49 +697,42 @@ c1, c2, c3 = st.columns(3)
 c1.metric("股票總市值", f"${g_mkt:,.0f}")
 c2.metric("投資總成本", f"${g_cost:,.0f}")
 c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
-st.write("---")
+st.write("---") 
 
-# === 1. 確保所有計算變數都已存在 (防呆) ===
-# 確保這些變數即使在空資料時也有預設值
-# === 🚨 終極防護罩 ===
-# 確保即使抓不到資料，變數也會有初始值，避免 NameError
-if 'df' not in locals() or df.empty:
-    df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
-
-# 如果還是沒有 monthly_calendar，強制建立一個空的
-if 'monthly_calendar' not in locals():
-    monthly_calendar = {i: {"amount": 0, "sources": []} for i in range(1, 13)}
-# === 1. 核心損益計算 (原本的代碼) ===
+# 重新計算總損益
 total_net_profit = df['損益'].sum() if not df.empty else 0
-# ... (以下接原本的計算代碼)
-total_net_profit = df['損益'].sum() if not df.empty else 0
-g_cost = g_cost if 'g_cost' in locals() else 0
-g_today_pnl = g_today_pnl if 'g_today_pnl' in locals() else 0
 r_total = (total_net_profit / g_cost * 100) if g_cost != 0 else 0
-prev_mkt = g_mkt - g_today_pnl if 'g_mkt' in locals() and 'g_today_pnl' in locals() else 1
+prev_mkt = g_mkt - g_today_pnl
 today_pct = (g_today_pnl / prev_mkt * 100) if prev_mkt != 0 else 0
 
-# === 2. 顏色定義 (確保變數存在) ===
 today_val_str = f"+{g_today_pnl:,.0f}" if g_today_pnl >= 0 else f"{g_today_pnl:,.0f}"
 today_pct_str = f"+{today_pct:.2f}%" if today_pct >= 0 else f"{today_pct:.2f}%"
 today_c_val = "triple-val-r" if g_today_pnl >= 0 else "triple-val-g"
 today_c_pct = "triple-pct-r" if g_today_pnl >= 0 else "triple-pct-g"
+
 total_val_str = f"+{total_net_profit:,.0f}" if total_net_profit >= 0 else f"{total_net_profit:,.0f}"
 total_pct_str = f"+{r_total:.2f}%" if r_total >= 0 else f"{r_total:.2f}%"
 total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
-# === 3. 月份處理 ===
+# === 💡 月份切換與動態資料抓取區塊 ===
+# 💡 終極綁定：直接讀寫核心資料庫，一啟動就強迫寫入 JSON 存檔，徹底解決失憶 Bug
 if 'view_month' not in st.session_state.my_data:
     st.session_state.my_data['view_month'] = datetime.today().month
+    save_to_json(st.session_state.my_data)
+
+# 直接拿核心資料庫的數字來顯示
 current_month_num = int(st.session_state.my_data['view_month'])
 current_month_div_amount = monthly_calendar[current_month_num]["amount"]
 current_month_div_str = f"${current_month_div_amount:,.0f}"
 div_sources = monthly_calendar[current_month_num]["sources"]
-sub_title = f"來自：{'、'.join([s.split(' ')[0] for s in div_sources])}" if div_sources else f"({current_month_num}月無配息預定)"
 
-# === 4. 定義 HTML 變數 (這是你報錯的兇手，現在它絕對會被執行到) ===
-# 檢查並確保變數存在後再進行渲染
+if div_sources:
+    sources_str = "、".join([s.split(' ')[0] for s in div_sources]) 
+    sub_title = f"來自：{sources_str}"
+else:
+    sub_title = f"({current_month_num}月無配息入帳預定)"
+
 html_triple_pnl = f"""
 <div class="triple-box">
     <div class="triple-col">
@@ -636,43 +741,45 @@ html_triple_pnl = f"""
         <div class="{today_c_pct}">{today_pct_str}</div>
     </div>
     <div class="triple-col">
-        <div class="triple-title">累積預估損益</div>
+        <div class="triple-title">累積預估淨損益 (已扣手續費/稅)</div>
         <div class="{total_c_val}">{total_val_str}</div>
         <div class="{total_c_pct}">{total_pct_str}</div>
     </div>
     <div class="triple-col flash-gold-box">
-        <div class="triple-title" style="color: #b48608; margin-bottom: 5px;">⚡ {current_month_num} 月配息</div>
+        <div class="triple-title" style="color: #b48608; margin-bottom: 5px;">⚡ {current_month_num} 月預估領息總額</div>
         <div class="triple-val-gold">{current_month_div_str}</div>
+        <div class="triple-sub-gold">{sub_title}</div>
     </div>
     <div class="triple-col blue-box">
-        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總領配息</div>
-        <div class="triple-val-blue">${int(st.session_state.my_data.get('total_received_divs', 0)):,}</div>
+        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總共領到配息金額</div>
+        <div class="triple-val-blue">${st.session_state.my_data.get('total_received_divs', 0):,.0f}</div>
+        <div class="triple-sub-blue">實際現金入帳總額</div>
     </div>
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
-# === 💡 時光機按鈕區塊 (修正縮排版) ===
-_, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
 
+# === 💡 時光機按鈕與手動記錄區 ===
+_, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
 with col_m1:
     if st.button("◀️ 上月", use_container_width=True):
-        curr = st.session_state.my_data.get('view_month', datetime.today().month)
+        curr = st.session_state.my_data['view_month']
         st.session_state.my_data['view_month'] = curr - 1 if curr > 1 else 12
         save_to_json(st.session_state.my_data)
         st.rerun()
-
 with col_m2:
     if st.button("🔄 本月", use_container_width=True):
         st.session_state.my_data['view_month'] = datetime.today().month
         save_to_json(st.session_state.my_data)
         st.rerun()
-
 with col_m3:
-            if st.button("下月 ▶️", use_container_width=True):
-                curr = st.session_state.my_data.get('view_month', datetime.today().month)
-                st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
-                save_to_json(st.session_state.my_data)
-                st.rerun()
+    if st.button("下月 ▶️", use_container_width=True):
+        curr = st.session_state.my_data['view_month']
+        st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
+        save_to_json(st.session_state.my_data)
+        st.rerun()
+
+st.write("") # 稍微留白排版
 
 # 💡 新增：超方便的「一鍵入帳」按鈕！
 _, col_action, _ = st.columns([1, 2, 1])
@@ -1289,8 +1396,6 @@ with bot_c3:
 # 🎯 放在腳本最底層的自動更新執行邏輯
 if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
     time.sleep(5)
-    # 💡 升級：自動更新前，確保清除所有快取
+    # 💡 這裡也一樣，改成全域清除
     st.cache_data.clear()
-    # 💡 強制重新讀取設定檔，確保張數與修改同步
-    st.session_state.my_data = load_settings()
     st.rerun()
