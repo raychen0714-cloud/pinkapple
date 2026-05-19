@@ -580,15 +580,19 @@ c1, c2, c3 = st.columns(3)
 c1.metric("股票總市值", f"${g_mkt:,.0f}")
 c2.metric("投資總成本", f"${g_cost:,.0f}")
 c3.metric("全年預估總領息", f"${sum([monthly_calendar[m]['amount'] for m in range(1, 13)]):,.0f}")
-st.write("---") 
+st.write("---")
 
-# === 1. 核心損益計算 ===
+# 1. 確保所有計算所需的變數都有初始值 (防呆)
 total_net_profit = df['損益'].sum() if not df.empty else 0
+g_cost = g_cost if 'g_cost' in locals() else 0
+g_today_pnl = g_today_pnl if 'g_today_pnl' in locals() else 0
+
+# 2. 計算損益變數
 r_total = (total_net_profit / g_cost * 100) if g_cost != 0 else 0
 prev_mkt = g_mkt - g_today_pnl
 today_pct = (g_today_pnl / prev_mkt * 100) if prev_mkt != 0 else 0
 
-# === 2. 定義顏色樣式變數 (確保每個變數都在這裡定義好) ===
+# 3. 定義 HTML 顯示用的樣式變數 (這裡就是關鍵！)
 today_val_str = f"+{g_today_pnl:,.0f}" if g_today_pnl >= 0 else f"{g_today_pnl:,.0f}"
 today_pct_str = f"+{today_pct:.2f}%" if today_pct >= 0 else f"{today_pct:.2f}%"
 today_c_val = "triple-val-r" if g_today_pnl >= 0 else "triple-val-g"
@@ -599,7 +603,7 @@ total_pct_str = f"+{r_total:.2f}%" if r_total >= 0 else f"{r_total:.2f}%"
 total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
-# === 3. 月份切換邏輯 (確保當前月份資料正確) ===
+# 4. 月份切換處理
 if 'view_month' not in st.session_state.my_data:
     st.session_state.my_data['view_month'] = datetime.today().month
     save_to_json(st.session_state.my_data)
@@ -610,7 +614,7 @@ current_month_div_str = f"${current_month_div_amount:,.0f}"
 div_sources = monthly_calendar[current_month_num]["sources"]
 sub_title = f"來自：{'、'.join([s.split(' ')[0] for s in div_sources])}" if div_sources else f"({current_month_num}月無配息預定)"
 
-# === 4. 渲染看板 (所有變數都在上面定義過了，這裡絕對不會報錯) ===
+# 5. 最後才渲染 HTML
 html_triple_pnl = f"""
 <div class="triple-box">
     <div class="triple-col">
