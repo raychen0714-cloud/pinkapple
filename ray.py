@@ -755,45 +755,7 @@ html_triple_pnl = f"""
     </div>
 </div>
 """
-st.markdown(html_triple_pnl, unsafe_allow_html=True)
-
-# 💡 新增：專屬的黃金卡片月份切換器 (排版稍微往右邊對齊黃金卡片)
-_, _, col_m1, col_m2, col_m3, _ = st.columns([3, 1, 1, 1, 1, 1])
-with col_m1:
-    if st.button("◀️ 上月預估", use_container_width=True):
-        st.session_state.view_month = st.session_state.view_month - 1 if st.session_state.view_month > 1 else 12
-        st.rerun()
-with col_m2:
-    if st.button("🔄 回本月", use_container_width=True):
-        st.session_state.view_month = datetime.today().month
-        st.rerun()
-with col_m3:
-    if st.button("下月預估 ▶️", use_container_width=True):
-        st.session_state.view_month = st.session_state.view_month + 1 if st.session_state.view_month < 12 else 1
-        st.rerun()
-
-# 下面保留你原本的手動記錄展開區塊
-with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
-
-# 💡 在大看板下方加入一個摺疊選單，讓你隨時可以修改「總共領到配息金額」
-with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
-    col_adj1, col_adj2 = st.columns([3, 1])
-    with col_adj1:
-        new_total_divs = st.number_input(
-            "請輸入您目前實際已領取的配息總額 (元)：", 
-            min_value=0.0, 
-            value=float(st.session_state.my_data.get('total_received_divs', 0)), 
-            step=100.0
-        )
-    with col_adj2:
-        st.write("") # 佔位，用來對齊按鈕
-        st.write("")
-        if st.button("💾 更新總額", type="primary", use_container_width=True):
-            st.session_state.my_data['total_received_divs'] = new_total_divs
-            save_to_json(st.session_state.my_data)
-            st.rerun()
-
-st.write("---")
+st.markdown(html_triple_pnl
 
 us_icon = "🌏"
 if "us" in macro_data and macro_data["us"]:
