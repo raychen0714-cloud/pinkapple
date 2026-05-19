@@ -646,27 +646,28 @@ html_triple_pnl = f"""
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
-# === 💡 時光機按鈕與手動記錄區 ===
+# === 💡 時光機按鈕區塊 (修正縮排版) ===
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
+
 with col_m1:
     if st.button("◀️ 上月", use_container_width=True):
-        curr = st.session_state.my_data['view_month']
+        curr = st.session_state.my_data.get('view_month', datetime.today().month)
         st.session_state.my_data['view_month'] = curr - 1 if curr > 1 else 12
         save_to_json(st.session_state.my_data)
         st.rerun()
+
 with col_m2:
     if st.button("🔄 本月", use_container_width=True):
         st.session_state.my_data['view_month'] = datetime.today().month
         save_to_json(st.session_state.my_data)
         st.rerun()
+
 with col_m3:
     if st.button("下月 ▶️", use_container_width=True):
-        curr = st.session_state.my_data['view_month']
+        curr = st.session_state.my_data.get('view_month', datetime.today().month)
         st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
         save_to_json(st.session_state.my_data)
         st.rerun()
-
-st.write("") # 稍微留白排版
 
 # 💡 新增：超方便的「一鍵入帳」按鈕！
 _, col_action, _ = st.columns([1, 2, 1])
