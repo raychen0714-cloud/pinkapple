@@ -560,6 +560,7 @@ def fetch_data(etf_list):
             # 如果 curr_p > prev_close ...
             # ==========================================
 
+# 確保這兩行完全沒有開頭空白
 df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
 macro_data = fetch_macro_data()
 
