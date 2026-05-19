@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 import time
 import altair as alt
 import twstock  # 💡 加上這行引入極速台股套件
+# 確保這兩行完全沒有開頭空白
+df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
+macro_data = fetch_macro_data()
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -560,9 +563,7 @@ def fetch_data(etf_list):
             # 如果 curr_p > prev_close ...
             # ==========================================
 
-# 確保這兩行完全沒有開頭空白
-df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
-macro_data = fetch_macro_data()
+
 
 # --- 5. 介面呈現 ---
 st.title("📈 實戰資產戰情室")
