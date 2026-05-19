@@ -716,8 +716,9 @@ total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
 # === 💡 月份切換與動態資料抓取區塊 ===
+# 💡 修正：優先從檔案讀取上次儲存的月份，如果沒存過，才預設為當下真實月份
 if 'view_month' not in st.session_state:
-    st.session_state.view_month = datetime.today().month
+    st.session_state.view_month = int(st.session_state.my_data.get('view_month', datetime.today().month))
 
 # 這裡確保「標題」、「金額」與「ETF 來源」全部使用同一套切換後的月份
 current_month_num = st.session_state.view_month
