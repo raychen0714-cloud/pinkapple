@@ -755,7 +755,7 @@ html_triple_pnl = f"""
     </div>
 </div>
 """
-st.markdown(html_triple_pnl
+st.markdown(html_triple_pnl, unsafe_allow_html=True)
 
 us_icon = "🌏"
 if "us" in macro_data and macro_data["us"]:
