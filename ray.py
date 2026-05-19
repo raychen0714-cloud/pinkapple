@@ -12,6 +12,9 @@ import twstock  # 💡 加上這行引入極速台股套件
 # 確保這兩行完全沒有開頭空白
 df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
 macro_data = fetch_macro_data()
+def fetch_macro_data():
+    # 這是備用的函數，確保程式不會報錯
+    return {"status": "ok"}
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
