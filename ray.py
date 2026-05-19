@@ -655,8 +655,11 @@ def fetch_data(etf_list):
             today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
+            # ... (在 fetch_data 迴圈底部) ...
+            
             tech_results.append({
-                "ETF 名仙": display_name,
+                "ETF 名稱": display_name,   # 修正錯字
+                "訊號來源": source_label,   # 確保這個欄位在這裡
                 "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
                 "均價": item['cost'],
