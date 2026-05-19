@@ -33,10 +33,10 @@ st.markdown("""
     .pay-div-title { color: #b45f06; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
     .pay-div-text { color: #783f04; font-size: 12px; font-weight: bold; line-height: 1.4; }
 
-    /* 三拼損益與領息橫列大看板樣式 */
-    .triple-box { background-color: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 15px; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; margin-bottom: 20px; box-shadow: 2px 2px 8px rgba(0,0,0,0.04); gap: 10px; }
-    .triple-col { flex: 1 1 30%; min-width: 140px; text-align: center; padding: 10px 0; }
-    .triple-col { flex: 1 1 30%; min-width: 140px; text-align: center; padding: 10px 0; }
+    /* 三拼損益與領息橫列大看板樣式 (升級為四拼) */
+    .triple-box { background-color: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 15px; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; margin-bottom: 10px; box-shadow: 2px 2px 8px rgba(0,0,0,0.04); gap: 10px; }
+    /* 💡 修正寬度：把原本的 30% 縮小成 22%，這樣就能完美塞下 4 個卡片 */
+    .triple-col { flex: 1 1 22%; min-width: 140px; text-align: center; padding: 10px 0; }
     .triple-title { font-size: 14px; color: #757575; font-weight: bold; margin-bottom: 5px; }
     .triple-val-r { font-size: 28px; font-weight: 900; color: #b71c1c; font-family: Arial, sans-serif; line-height: 1.1; }
     .triple-val-g { font-size: 28px; font-weight: 900; color: #2e7d32; font-family: Arial, sans-serif; line-height: 1.1; }
@@ -44,6 +44,11 @@ st.markdown("""
     .triple-pct-r { font-size: 14px; font-weight: bold; color: #b71c1c; margin-top: 5px; }
     .triple-pct-g { font-size: 14px; font-weight: bold; color: #2e7d32; margin-top: 5px; }
     .triple-sub-gold { font-size: 12px; font-weight: bold; color: #7f8c8d; margin-top: 5px; }
+
+    /* 💡 新增第 4 格專用的「安心藍色」樣式 */
+    .blue-box { background-color: #f0f8ff; border-radius: 12px; padding: 15px; border: 2px solid #90caf9; }
+    .triple-val-blue { font-size: 28px; font-weight: 900; color: #1565c0; font-family: Arial, sans-serif; line-height: 1.1; text-shadow: 1px 1px 2px rgba(21, 101, 192, 0.2); }
+    .triple-sub-blue { font-size: 12px; font-weight: bold; color: #546e7a; margin-top: 5px; }
 
     /* 閃電特效 */
     @keyframes lightning-strike {
@@ -180,6 +185,11 @@ if 'watchlist' not in st.session_state.my_data:
 
 if 'pledge' not in st.session_state.my_data:
     st.session_state.my_data['pledge'] = {"borrowed_amount": 0}
+
+# 💡 新增這兩行：初始化「已領配息總額」
+if 'total_received_divs' not in st.session_state.my_data:
+    st.session_state.my_data['total_received_divs'] = 0.0
+
 for etf in st.session_state.my_data['etfs']:
     if 'pledged_shares' not in etf:
         etf['pledged_shares'] = 0.0
@@ -715,6 +725,7 @@ if div_sources:
 else:
     sub_title = "本月無現金流入預定"
 
+# --- 生成四大看板 ---
 html_triple_pnl = f"""
 <div class="triple-box">
     <div class="triple-col">
@@ -732,9 +743,34 @@ html_triple_pnl = f"""
         <div class="triple-val-gold">{current_month_div_str}</div>
         <div class="triple-sub-gold">{sub_title}</div>
     </div>
+    <div class="triple-col blue-box">
+        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總共領到配息金額</div>
+        <div class="triple-val-blue">${st.session_state.my_data['total_received_divs']:,.0f}</div>
+        <div class="triple-sub-blue">實際現金入帳總額</div>
+    </div>
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
+
+# 💡 在大看板下方加入一個摺疊選單，讓你隨時可以修改「總共領到配息金額」
+with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
+    col_adj1, col_adj2 = st.columns([3, 1])
+    with col_adj1:
+        new_total_divs = st.number_input(
+            "請輸入您目前實際已領取的配息總額 (元)：", 
+            min_value=0.0, 
+            value=float(st.session_state.my_data.get('total_received_divs', 0)), 
+            step=100.0
+        )
+    with col_adj2:
+        st.write("") # 佔位，用來對齊按鈕
+        st.write("")
+        if st.button("💾 更新總額", type="primary", use_container_width=True):
+            st.session_state.my_data['total_received_divs'] = new_total_divs
+            save_to_json(st.session_state.my_data)
+            st.rerun()
+
+st.write("---")
 
 us_icon = "🌏"
 if "us" in macro_data and macro_data["us"]:
