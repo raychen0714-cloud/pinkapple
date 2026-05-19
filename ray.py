@@ -584,10 +584,14 @@ st.write("---")
 
 # === 1. 確保所有計算變數都已存在 (防呆) ===
 # 確保這些變數即使在空資料時也有預設值
-# === 🚨 防護罩：確保 df 和其他數據絕對存在 ===
+# === 🚨 終極防護罩 ===
+# 確保即使抓不到資料，變數也會有初始值，避免 NameError
 if 'df' not in locals() or df.empty:
     df, df_tech, g_mkt, g_cost, g_div, g_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar = fetch_data(st.session_state.my_data['etfs'])
 
+# 如果還是沒有 monthly_calendar，強制建立一個空的
+if 'monthly_calendar' not in locals():
+    monthly_calendar = {i: {"amount": 0, "sources": []} for i in range(1, 13)}
 # === 1. 核心損益計算 (原本的代碼) ===
 total_net_profit = df['損益'].sum() if not df.empty else 0
 # ... (以下接原本的計算代碼)
