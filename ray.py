@@ -1226,7 +1226,7 @@ if st.session_state.show_history:
                 hist_data = fetch_daily_history_masterpiece(selected_symbol, lookback_days)
                 
                 if not hist_data.empty:
-                    # 💡 修正 1：外層容器加入 flex-wrap: nowrap 避免換行，並增加 padding-bottom 留空間給捲動條
+                    # 外層容器加入 flex-wrap: nowrap 避免換行，並增加 padding-bottom 留空間給捲動條
                     html_cards = "<div style='display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; gap: 10px; padding: 10px 5px 15px 5px; -webkit-overflow-scrolling: touch;'>"
                     week_dict = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
                     
@@ -1242,16 +1242,9 @@ if st.session_state.show_history:
                         else:
                             color, bg_color, sign = "#555555", "#f8f9fa", ""
                             
-                        # 💡 修正 2：卡片加入 flex: 0 0 auto; 確保即使資料再多，卡片也絕對不會被擠壓變形
-                        # 💡 修正 3：稍微加寬 min-width 到 90px，讓排版更寬裕舒適
-                        html_cards += f"""
-                        <div style='flex: 0 0 auto; min-width: 90px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 1px 1px 4px rgba(0,0,0,0.08);'>
-                            <div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; margin-bottom: 6px;'>{date_str}</div>
-                            <div style='font-size: 14px; color: #111; font-weight: bold; margin-bottom: 4px;'>{row['Close']:.2f}</div>
-                            <div style='font-size: 15px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div>
-                            <div style='font-size: 12px; font-weight: bold; color: {color}; margin-top: 2px;'>{sign}{pct_val:.2f}%</div>
-                        </div>
-                        """
+                        # 💡 終極解法：把這裡壓縮成「單行字串」，徹底消滅 Python 的縮排空格，避免被當成 Markdown 程式碼區塊！
+                        html_cards += f"<div style='flex: 0 0 auto; min-width: 90px; background-color: {bg_color}; border: 1.5px solid {color}; border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 1px 1px 4px rgba(0,0,0,0.08);'><div style='font-size: 12px; color: #555; font-weight: bold; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; margin-bottom: 6px;'>{date_str}</div><div style='font-size: 14px; color: #111; font-weight: bold; margin-bottom: 4px;'>{row['Close']:.2f}</div><div style='font-size: 15px; font-weight: 900; color: {color}; line-height: 1.2;'>{sign}{diff_val:.2f}</div><div style='font-size: 12px; font-weight: bold; color: {color}; margin-top: 2px;'>{sign}{pct_val:.2f}%</div></div>"
+                        
                     html_cards += "</div>"
                     st.markdown(html_cards, unsafe_allow_html=True)
 
