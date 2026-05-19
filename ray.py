@@ -657,16 +657,17 @@ def fetch_data(etf_list):
 
             # ... (在 fetch_data 迴圈底部) ...
             
+            # --- 修正後的技術監控資料格式 ---
             tech_results.append({
-                "ETF 名稱": display_name,   # 修正錯字
-                "訊號來源": source_label,   # 確保這個欄位在這裡
-                "股票張數": item['holdings'], 
+                "ETF名稱": display_name,
+                "來源": source_label,
+                "張數": item['holdings'], 
                 "現價": round(curr_p, 2),
                 "均價": item['cost'],
                 "今日損益": today_pnl_str,
-                "今日漲跌(點)": today_diff_str,
-                "今日漲跌幅": today_pct_str, 
-                "今日交易量(萬張)": vol_wan_str
+                "漲跌": today_diff_str,
+                "漲幅": today_pct_str, 
+                "成交量": vol_wan_str
             })
             
         except Exception as e: continue
