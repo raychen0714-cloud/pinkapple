@@ -663,11 +663,11 @@ with col_m2:
         st.rerun()
 
 with col_m3:
-    if st.button("下月 ▶️", use_container_width=True):
-        curr = st.session_state.my_data.get('view_month', datetime.today().month)
-        st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
-        save_to_json(st.session_state.my_data)
-        st.rerun()
+            if st.button("下月 ▶️", use_container_width=True):
+                curr = st.session_state.my_data.get('view_month', datetime.today().month)
+                st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
+                save_to_json(st.session_state.my_data)
+                st.rerun()
 
 # 💡 新增：超方便的「一鍵入帳」按鈕！
 _, col_action, _ = st.columns([1, 2, 1])
