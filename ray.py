@@ -622,6 +622,7 @@ div_sources = monthly_calendar[current_month_num]["sources"]
 sub_title = f"來自：{'、'.join([s.split(' ')[0] for s in div_sources])}" if div_sources else f"({current_month_num}月無配息預定)"
 
 # === 4. 定義 HTML 變數 (這是你報錯的兇手，現在它絕對會被執行到) ===
+# 檢查並確保變數存在後再進行渲染
 html_triple_pnl = f"""
 <div class="triple-box">
     <div class="triple-col">
@@ -630,23 +631,20 @@ html_triple_pnl = f"""
         <div class="{today_c_pct}">{today_pct_str}</div>
     </div>
     <div class="triple-col">
-        <div class="triple-title">累積預估淨損益</div>
+        <div class="triple-title">累積預估損益</div>
         <div class="{total_c_val}">{total_val_str}</div>
         <div class="{total_c_pct}">{total_pct_str}</div>
     </div>
     <div class="triple-col flash-gold-box">
-        <div class="triple-title" style="color: #b48608; margin-bottom: 5px;">⚡ {current_month_num} 月預估領息總額</div>
+        <div class="triple-title" style="color: #b48608; margin-bottom: 5px;">⚡ {current_month_num} 月配息</div>
         <div class="triple-val-gold">{current_month_div_str}</div>
-        <div class="triple-sub-gold">{sub_title}</div>
     </div>
     <div class="triple-col blue-box">
-        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總共領到配息金額</div>
-        <div class="triple-val-blue">${st.session_state.my_data.get('total_received_divs', 0):,.0f}</div>
-        <div class="triple-sub-blue">實際現金入帳總額</div>
+        <div class="triple-title" style="color: #1565c0; margin-bottom: 5px;">💰 總領配息</div>
+        <div class="triple-val-blue">${int(st.session_state.my_data.get('total_received_divs', 0)):,}</div>
     </div>
 </div>
 """
-# === 5. 最後渲染 ===
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
 # === 💡 時光機按鈕與手動記錄區 ===
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
