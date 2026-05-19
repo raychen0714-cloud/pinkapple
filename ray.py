@@ -82,7 +82,7 @@ st.markdown("""
     /* 自動更新控制區樣式 */
     .auto-refresh-box { background-color: #f0f7ff; border: 1px solid #cce5ff; border-radius: 8px; padding: 15px; text-align: center; }
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 # --- 2. 系統設定與資料庫 ---
 SETTINGS_FILE = 'settings.json'
@@ -588,6 +588,9 @@ def fetch_data(etf_list):
             if len(months_to_pay) > 0 and div_amount > 0 and curr_p > 0:
                 est_yield = (div_amount * len(months_to_pay)) / curr_p * 100
 
+            # 💡 【核心優化】：自動讀取記憶體中手動調整後的張數，如果沒調過就拿預設持股張數
+            # 💡 優先讀取檔案裡存下來的自訂張數，都沒有的話才用預設庫存張數
+            # 💡 直接從核心設定檔讀取 custom 數值，如果沒有改過，就用原本庫存的 holdings
             ex_shares_setting = float(item.get('ex_div_shares_custom', item['holdings']))
             calc_div_shares = ex_shares_setting * 1000  # 換算成股數
 
@@ -598,8 +601,10 @@ def fetch_data(etf_list):
                 
                 pay_date_obj = datetime.strptime(pay_date, '%Y-%m-%d')
                 days_diff_pay = (pay_date_obj.date() - today.date()).days
+                # 領息雷達同步改用修正後的張數計算
                 if 0 <= days_diff_pay <= 20: radar_pay.append({"symbol": item['symbol'].split('.')[0], "date": pay_date, "amount": calc_div_shares * div_amount, "days": days_diff_pay})
 
+            # 💡 讓 1~12 月領息日曆也全自動同步採用你修正後的除息張數計算
             if div_amount > 0 and calc_div_shares > 0:
                 explicit_pay_month = None
                 if is_announced and pay_date != "待官方公告":
@@ -642,6 +647,7 @@ def fetch_data(etf_list):
             except Exception:
                 pass
 
+            # 總預估領息金額改用修正後的張數累加
             total_mkt += mkt_val; total_cost += cost_val; total_div += (calc_div_shares * div_amount)
             
             results.append({
@@ -652,22 +658,19 @@ def fetch_data(etf_list):
                 "最新填息紀錄": fill_status 
             })
             
+            # 計算漲跌點數與將交易量換算為「萬張」(除以一千萬)
             today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
-            # ... (在 fetch_data 迴圈底部) ...
-            
-            # --- 修正後的技術監控資料格式 ---
             tech_results.append({
-                "ETF名稱": display_name,
-                "來源": source_label,
-                "張數": item['holdings'], 
+                "ETF 名仙": display_name,
+                "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
                 "均價": item['cost'],
                 "今日損益": today_pnl_str,
-                "漲跌": today_diff_str,
-                "漲幅": today_pct_str, 
-                "成交量": vol_wan_str
+                "今日漲跌(點)": today_diff_str,
+                "今日漲跌幅": today_pct_str, 
+                "今日交易量(萬張)": vol_wan_str
             })
             
         except Exception as e: continue
@@ -1103,7 +1106,7 @@ if st.session_state.show_holdings:
                     st.markdown(f"本期預估領息金額: :orange[**${row['單次預估領息']:,.0f}**]")
                     st.caption(f"📅 除息日期: {row['最新公告除息日']} ({status_badge})")
     else:
-        st.info("─ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
+        st.info("⚠️ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
     st.write("---")
 
 # --- 🧩 展開ETF成份股 ---
@@ -1147,7 +1150,7 @@ if st.session_state.show_constituents:
                 st.markdown(f"<div style='font-weight:900; color:#1e3c72; font-size:16px; margin-bottom:5px; margin-top:15px;'>🛡️ {name}</div>", unsafe_allow_html=True)
                 st.altair_chart(chart, use_container_width=True)
     else:
-        st.info("─ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
+        st.info("⚠️ 目前尚無持股資料。請至下方「⚙️ 標的管理」新增您的庫存！")
     st.write("---")
 
 # --- 🏦 展開質押專區 ---
@@ -1237,7 +1240,7 @@ if st.session_state.show_pledge:
             save_to_json(st.session_state.my_data)
             st.rerun()
     else:
-        st.info("─ 目前尚無持股資料，無法進行質押計算。")
+        st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
 # --- 📜 展開持股歷史情報 ---
 
@@ -1375,7 +1378,7 @@ with bot_c2:
 with bot_c3:
     st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
     st.markdown("#### ⚡ 系統自動更新")
-    st.caption("開啟後每 30 秒自動重整抓取最新即時股價")
+    st.caption("開啟後每 5 秒自動重整抓取最新即時股價")
     
     if 'auto_refresh_mode' not in st.session_state:
         st.session_state.auto_refresh_mode = "❌ NO USE (關閉)"
