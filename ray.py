@@ -716,12 +716,13 @@ total_c_val = "triple-val-r" if total_net_profit >= 0 else "triple-val-g"
 total_c_pct = "triple-pct-r" if total_net_profit >= 0 else "triple-pct-g"
 
 # === 💡 月份切換與動態資料抓取區塊 ===
-# 💡 修正：優先從檔案讀取上次儲存的月份，如果沒存過，才預設為當下真實月份
-if 'view_month' not in st.session_state:
-    st.session_state.view_month = int(st.session_state.my_data.get('view_month', datetime.today().month))
+# 💡 終極綁定：直接讀寫核心資料庫，一啟動就強迫寫入 JSON 存檔，徹底解決失憶 Bug
+if 'view_month' not in st.session_state.my_data:
+    st.session_state.my_data['view_month'] = datetime.today().month
+    save_to_json(st.session_state.my_data)
 
-# 這裡確保「標題」、「金額」與「ETF 來源」全部使用同一套切換後的月份
-current_month_num = st.session_state.view_month
+# 直接拿核心資料庫的數字來顯示
+current_month_num = int(st.session_state.my_data['view_month'])
 current_month_div_amount = monthly_calendar[current_month_num]["amount"]
 current_month_div_str = f"${current_month_div_amount:,.0f}"
 div_sources = monthly_calendar[current_month_num]["sources"]
@@ -730,7 +731,6 @@ if div_sources:
     sources_str = "、".join([s.split(' ')[0] for s in div_sources]) 
     sub_title = f"來自：{sources_str}"
 else:
-    # 如果下個月剛好沒有 ETF 配息，就會顯示這個提示
     sub_title = f"({current_month_num}月無配息入帳預定)"
 
 html_triple_pnl = f"""
@@ -760,19 +760,24 @@ html_triple_pnl = f"""
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
 
 # === 💡 時光機按鈕與手動記錄區 ===
-# 調整欄位比例，讓按鈕完美置中在四大看板下方
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
 with col_m1:
     if st.button("◀️ 上月", use_container_width=True):
-        st.session_state.view_month = st.session_state.view_month - 1 if st.session_state.view_month > 1 else 12
+        # 💡 按下按鈕後，直接修改資料庫並立刻存檔
+        curr = st.session_state.my_data['view_month']
+        st.session_state.my_data['view_month'] = curr - 1 if curr > 1 else 12
+        save_to_json(st.session_state.my_data)
         st.rerun()
 with col_m2:
     if st.button("🔄 本月", use_container_width=True):
-        st.session_state.view_month = datetime.today().month
+        st.session_state.my_data['view_month'] = datetime.today().month
+        save_to_json(st.session_state.my_data)
         st.rerun()
 with col_m3:
     if st.button("下月 ▶️", use_container_width=True):
-        st.session_state.view_month = st.session_state.view_month + 1 if st.session_state.view_month < 12 else 1
+        curr = st.session_state.my_data['view_month']
+        st.session_state.my_data['view_month'] = curr + 1 if curr < 12 else 1
+        save_to_json(st.session_state.my_data)
         st.rerun()
 
 with st.expander("✏️ 手動記錄 / 修正「總共領到配息金額」"):
