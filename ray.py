@@ -1372,7 +1372,7 @@ with bot_c2:
 with bot_c3:
     st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
     st.markdown("#### ⚡ 系統自動更新")
-    st.caption("開啟後每 5 秒自動重整抓取最新即時股價")
+    st.caption("開啟後每 30 秒自動重整抓取最新即時股價")
     
     if 'auto_refresh_mode' not in st.session_state:
         st.session_state.auto_refresh_mode = "❌ NO USE (關閉)"
