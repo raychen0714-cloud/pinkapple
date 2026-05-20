@@ -329,28 +329,30 @@ def fetch_macro_data():
                     res[region][name] = {"price": curr, "diff": curr - prev, "pct": ((curr - prev)/prev)*100, "date": hist.index[-1].strftime("%m/%d")}
             except: pass
 
-    # 🚀 突破證交所封鎖機制
+    # 🚀 突破證交所封鎖機制 (修正大盤代號辨識)
     try:
-        twse_targets = {"tse_t00.tw": "台股加權 (大盤)", "tse_2330.tw": "台積電 (台股)", "tse_2454.tw": "聯發科 (台股)"}
+        # 改用乾淨的核心代號 (c) 來做配對
+        twse_targets_map = {"t00": "台股加權 (大盤)", "2330": "台積電 (台股)", "2454": "聯發科 (台股)"}
+        twse_query = "tse_t00.tw|tse_2330.tw|tse_2454.tw"
         headers = {"User-Agent": "Mozilla/5.0"}
         
-        # 🔥 魔法：建立 Session，先假裝成真人去首頁拿 Cookie 通行證
         session = requests.Session()
         session.get("https://mis.twse.com.tw/stock/index.jsp", headers=headers, timeout=5)
         
-        # 拿著通行證去呼叫 API
         ts = int(time.time() * 1000)
-        twse_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={'|'.join(twse_targets.keys())}&json=1&delay=0&_={ts}"
+        twse_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={twse_query}&json=1&delay=0&_={ts}"
         req = session.get(twse_url, headers=headers, timeout=5)
         msg_array = req.json().get('msgArray', [])
         
         today_str = datetime.today().strftime("%m/%d")
         for msg in msg_array:
-            full_ch = f"{msg.get('ex', '')}_{msg.get('ch', '')}.tw"
-            if full_ch in twse_targets:
-                name = twse_targets[full_ch]
+            c = msg.get('c', '') # 直接抓取代號：t00, 2330, 2454
+            
+            if c in twse_targets_map:
+                name = twse_targets_map[c]
                 p = msg.get('z', '-')
                 y = msg.get('y', '0')
+                
                 if p != '-' and float(p) > 0 and float(y) > 0:
                     curr = float(p)
                     prev = float(y)
