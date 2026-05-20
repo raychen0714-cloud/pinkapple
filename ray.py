@@ -227,11 +227,25 @@ def delete_etf(index):
         st.session_state.my_data['etfs'].pop(index)
         save_to_json(st.session_state.my_data)
 
+def move_etf_up(index):
+    if index > 0:
+        st.session_state.my_data['etfs'][index - 1], st.session_state.my_data['etfs'][index] = \
+        st.session_state.my_data['etfs'][index], st.session_state.my_data['etfs'][index - 1]
+        save_to_json(st.session_state.my_data)
+
+def move_etf_down(index):
+    if index < len(st.session_state.my_data['etfs']) - 1:
+        st.session_state.my_data['etfs'][index + 1], st.session_state.my_data['etfs'][index] = \
+        st.session_state.my_data['etfs'][index], st.session_state.my_data['etfs'][index + 1]
+        save_to_json(st.session_state.my_data)
+
 def save_edits():
     temp_list = []
-    for i, item in enumerate(st.session_state.my_data['etfs']):
-        h_val = st.session_state.get(f"edit_h_{i}", item['holdings'])
-        c_val = st.session_state.get(f"edit_c_{i}", item['cost'])
+    # 這裡將綁定的 key 改為 symbol，避免上下移動時數字殘留
+    for item in st.session_state.my_data['etfs']:
+        sym = item['symbol']
+        h_val = st.session_state.get(f"edit_h_{sym}", item['holdings'])
+        c_val = st.session_state.get(f"edit_c_{sym}", item['cost'])
         temp_list.append({
             "symbol": item['symbol'],
             "name": item['name'],
@@ -1176,17 +1190,25 @@ with bot_c2:
 
         if st.session_state.my_data['etfs']:
             st.write("---")
-            st.markdown("#### 📝 庫存修改與刪除")
+            st.markdown("#### 📝 庫存修改與自訂排序")
             
             for i, item in enumerate(st.session_state.my_data['etfs']):
-                with st.expander(f"📍 {item['name']}"):
+                sym = item['symbol']
+                with st.expander(f"📍 {i+1}. {item['name']}"):
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        st.number_input("張數", value=float(item['holdings']), step=0.001, format="%.3f", key=f"edit_h_{i}")
+                        st.number_input("張數", value=float(item['holdings']), step=0.001, format="%.3f", key=f"edit_h_{sym}")
                     with col_e2:
-                        st.number_input("均價", value=float(item['cost']), step=0.1, key=f"edit_c_{i}")
+                        st.number_input("均價", value=float(item['cost']), step=0.1, key=f"edit_c_{sym}")
 
-                    st.button(f"🗑️ 刪除 {item['name']}", key=f"del_{i}", on_click=delete_etf, args=(i,), use_container_width=True)
+                    # 加入上移、下移、刪除三個按鈕
+                    col_btn1, col_btn2, col_btn3 = st.columns(3)
+                    with col_btn1:
+                        st.button("⬆️ 上移", key=f"up_{sym}", on_click=move_etf_up, args=(i,), use_container_width=True, disabled=(i == 0))
+                    with col_btn2:
+                        st.button("⬇️ 下移", key=f"down_{sym}", on_click=move_etf_down, args=(i,), use_container_width=True, disabled=(i == len(st.session_state.my_data['etfs']) - 1))
+                    with col_btn3:
+                        st.button("🗑️ 刪除", key=f"del_{sym}", on_click=delete_etf, args=(i,), use_container_width=True)
 
             st.button("💾 儲存所有修改", use_container_width=True, type="primary", on_click=save_edits)
 
