@@ -1,18 +1,3 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import json
-import os
-import urllib.request
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
-import time
-import altair as alt
-import requests
-
-# --- 1. 網頁基礎設定 ---
-st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
-
 # 自定義 CSS
 st.markdown("""
     <style>
@@ -57,4 +42,28 @@ st.markdown("""
     }
     .flash-gold-box { background-color: #fffdf5; border-radius: 12px; padding: 15px; border: 2px solid #f1c40f; animation: lightning-strike 0.1s infinite; }
 
-    .alert-high { background-color: #ffebee; border: 2px solid #ef5350; border-left: 8px solid #d32f2f; padding: 1
+    .alert-high { background-color: #ffebee; border: 2px solid #ef5350; border-left: 8px solid #d32f2f; padding: 15px; border-radius: 8px; margin-bottom: 15px; color: #b71c1c; font-size: 16px; font-weight: bold; }
+    .alert-low { background-color: #e8f5e9; border: 2px solid #66bb6a; border-left: 8px solid #388e3c; padding: 15px; border-radius: 8px; margin-bottom: 15px; color: #1b5e20; font-size: 16px; font-weight: bold; }
+
+    .month-card { background-color: #e9ecef; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #ced4da; }
+    .month-title { font-size: 20px; font-weight: bold; color: #495057; }
+    .month-amount { font-size: 28px; font-weight: bold; color: #d9534f; margin: 10px 0; }
+    .month-sources { font-size: 14px; color: #6c757d; }
+    
+    div.stButton > button { font-weight: bold; border-radius: 8px; }
+
+    .upcoming-box { background-color: #fff4e6; border: 1px solid #ffd8a8; border-radius: 8px; padding: 8px 10px; text-align: center; margin-bottom: 15px; box-shadow: 1px 1px 3px rgba(0,0,0,0.05); }
+    .upcoming-title { color: #d9480f; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
+    .upcoming-item { color: #862e01; font-size: 13px; font-weight: bold; margin-bottom: 2px; }
+    .upcoming-price { font-size: 11px; color: #888; }
+    
+    .calc-box { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;}
+    .calc-title { color: #495057; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+    .calc-result-profit { font-size: 24px; font-weight: bold; color: #d32f2f; margin-top: 10px;}
+    .calc-result-loss { font-size: 24px; font-weight: bold; color: #388e3c; margin-top: 10px;}
+    .calc-result-info { font-size: 14px; color: #6c757d; margin-top: 5px;}
+    
+    /* 自動更新控制區樣式 */
+    .auto-refresh-box { background-color: #f0f7ff; border: 1px solid #cce5ff; border-radius: 8px; padding: 15px; text-align: center; }
+    </style>
+    """, unsafe_allow_html=True)
