@@ -420,7 +420,9 @@ def fetch_data(etf_list):
             cost_val = shares * item['cost']
             
             # 🚀 【對齊券商損益】：移除賣出手續費預扣，讓獲利與券商 App 一模一樣
-            profit = mkt_val - cost_val
+            # 依照你的券商邏輯：預扣約 0.2425% 的交易稅與手續費 (ETF 0.1% 稅 + 0.1425% 手續費)
+            sell_cost_estimate = mkt_val * 0.002425
+            profit = mkt_val - cost_val - sell_cost_estimate
             roi = (profit / cost_val * 100) if cost_val != 0 else 0
             
             today_diff = curr_p - prev_close
