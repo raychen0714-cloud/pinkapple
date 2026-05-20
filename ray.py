@@ -373,13 +373,15 @@ def fetch_data(etf_list):
             msg_array = req.json().get('msgArray', [])
             for msg in msg_array:
                 sym_key = msg['c'] + ".TW"
-                p = msg.get('z', '-')
-                if p == '-': p = msg.get('y', '0') # 若盤中暫無成交價則採用昨收
+                p = msg.get('z', '-') # z 是最新成交價
+                y = msg.get('y', '0') # y 是昨日收盤價
                 try:
-                    if float(p) > 0:
+                    # 💡 關鍵修正：如果證交所瞬間沒傳回成交價 (p 是 '-')，我們就不強迫覆蓋，
+                    # 讓它乖乖退回去用 Yahoo 財經的報價，才不會讓漲跌變成 0！
+                    if p != '-' and float(p) > 0:
                         twse_rt_data[sym_key] = {
                             'price': float(p),
-                            'prev_close': float(msg.get('y', 0)),
+                            'prev_close': float(y),
                             'volume': int(msg.get('v', 0)) * 1000 
                         }
                 except: pass
