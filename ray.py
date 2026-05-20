@@ -311,13 +311,15 @@ def toggle_constituents(): st.session_state.show_constituents = not st.session_s
 def toggle_pledge(): st.session_state.show_pledge = not st.session_state.show_pledge 
 
 # --- 📈 抓取美台股大盤指標 ---
-@st.cache_data(ttl=300) 
+@st.cache_data(ttl=60) # 把快取時間從 300 秒縮短到 60 秒，讓大盤看板更新更頻繁
 def fetch_macro_data():
     tickers = {
         "us": {"道瓊工業": "^DJI", "那斯達克": "^IXIC", "費城半導體": "^SOX", "輝達 NVIDIA": "NVDA", "台積電 ADR": "TSM"},
         "tw": {"台股加權 (大盤)": "^TWII", "台積電 (台股)": "2330.TW", "聯發科 (台股)": "2454.TW", "台指期 (近月)": "WTX&P"}
     }
     res = {"us": {}, "tw": {}}
+    
+    # 1. 預設先用 Yahoo 財經抓取 (美股、期貨與保底用)
     for region, t_dict in tickers.items():
         for name, symbol in t_dict.items():
             try:
@@ -331,6 +333,40 @@ def fetch_macro_data():
                     date_str = hist.index[-1].strftime("%m/%d")
                     res[region][name] = {"price": curr, "diff": diff, "pct": pct, "date": date_str}
             except: pass
+
+    # 2. 針對台股大盤、台積電、聯發科，直接呼叫 TWSE 即時 API 進行覆蓋
+    try:
+        twse_targets = {"tse_t00.tw": "台股加權 (大盤)", "tse_2330.tw": "台積電 (台股)", "tse_2454.tw": "聯發科 (台股)"}
+        ts = int(time.time() * 1000)
+        # t00 就是加權指數的代號
+        twse_url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={'|'.join(twse_targets.keys())}&json=1&delay=0&_={ts}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        req = requests.get(twse_url, headers=headers, timeout=5)
+        msg_array = req.json().get('msgArray', [])
+        
+        today_str = datetime.today().strftime("%m/%d")
+        
+        for msg in msg_array:
+            ch = msg.get('ch', '')
+            ex = msg.get('ex', '')
+            full_ch = f"{ex}_{ch}.tw"
+            
+            if full_ch in twse_targets:
+                name = twse_targets[full_ch]
+                p = msg.get('z', '-') # 最新成交價 / 指數
+                y = msg.get('y', '0') # 昨日收盤價
+                
+                # 如果有抓到即時數據，就大膽覆蓋掉原本 Yahoo 的延遲資料
+                if p != '-' and float(p) > 0 and float(y) > 0:
+                    curr = float(p)
+                    prev = float(y)
+                    diff = curr - prev
+                    pct = (diff / prev) * 100
+                    # 加上 (TWSE 即時) 標籤，讓你知道這已經是最新報價
+                    res["tw"][name] = {"price": curr, "diff": diff, "pct": pct, "date": f"{today_str} (TWSE 即時)"}
+    except Exception as e:
+        pass
+        
     return res
 
 def render_macro_cards(data_dict, region_prefix):
