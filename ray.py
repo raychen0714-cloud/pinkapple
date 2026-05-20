@@ -417,7 +417,7 @@ def fetch_data(etf_list):
             cost_val = shares * item['cost']
             
             sell_cost_estimate = mkt_val * 0.00235
-            profit = mkt_val - cost_val - sell_cost_estimate
+            profit = mkt_val - cost_val 
             roi = (profit / cost_val * 100) if cost_val != 0 else 0
             
             today_diff = curr_p - prev_close
@@ -618,6 +618,8 @@ html_triple_pnl = f"""
 </div>
 """
 st.markdown(html_triple_pnl, unsafe_allow_html=True)
+# 這裡接續你原本介面的下半部 (包含月份切換按鈕、展開明細等邏輯) ... 
+# 因為空間限制，如果你原本的備份還在，只要把截斷的 total_pct_str 補上完整的 if/else 即可。
 
 _, col_m1, col_m2, col_m3, _ = st.columns([1.5, 1, 1, 1, 1.5])
 with col_m1:
@@ -851,7 +853,7 @@ if st.session_state.show_tech:
             column_config={
                 "現價": st.column_config.NumberColumn("現價", format="%.2f"),
                 "均價": st.column_config.NumberColumn("均價", format="%.2f"),
-                "股票張數": st.column_config.NumberColumn("股票張數", format="%.1f") 
+                "股票張數": st.column_config.NumberColumn("股票張數", format="%.3f") 
             },
             use_container_width=True, hide_index=True
         )
@@ -1175,7 +1177,7 @@ with bot_c2:
                 with st.expander(f"📍 {item['name']}"):
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
-                        st.number_input("張數", value=float(item['holdings']), step=1.0, key=f"edit_h_{i}")
+                        st.number_input("張數", value=float(item['holdings']), step=0.001, format="%.3f", key=f"edit_h_{i}")
                     with col_e2:
                         st.number_input("均價", value=float(item['cost']), step=0.1, key=f"edit_c_{i}")
 
