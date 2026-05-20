@@ -1201,16 +1201,49 @@ with bot_c2:
                     with col_e2:
                         st.number_input("均價", value=float(item['cost']), step=0.1, key=f"edit_c_{sym}")
 
-                    # 加入上移、下移、刪除三個按鈕
                     col_btn1, col_btn2, col_btn3 = st.columns(3)
                     with col_btn1:
-                        st.button("⬆️ 上移", key=f"up_{sym}", on_click=move_etf_up, args=(i,), use_container_width=True, disabled=(i == 0))
-                    with col_btn2:
-                        st.button("⬇️ 下移", key=f"down_{sym}", on_click=move_etf_down, args=(i,), use_container_width=True, disabled=(i == len(st.session_state.my_data['etfs']) - 1))
-                    with col_btn3:
-                        st.button("🗑️ 刪除", key=f"del_{sym}", on_click=delete_etf, args=(i,), use_container_width=True)
+                        if st.button("⬆️ 上移", key=f"up_{sym}", disabled=(i == 0), use_container_width=True):
+                            # 移動前，先自動把當前輸入框的最新數字存起來，避免移動後數字遺失
+                            for tmp in st.session_state.my_data['etfs']:
+                                t_sym = tmp['symbol']
+                                if f"edit_h_{t_sym}" in st.session_state: tmp['holdings'] = float(st.session_state[f"edit_h_{t_sym}"])
+                                if f"edit_c_{t_sym}" in st.session_state: tmp['cost'] = float(st.session_state[f"edit_c_{t_sym}"])
+                            
+                            # 執行排序交換
+                            st.session_state.my_data['etfs'][i - 1], st.session_state.my_data['etfs'][i] = \
+                            st.session_state.my_data['etfs'][i], st.session_state.my_data['etfs'][i - 1]
+                            save_to_json(st.session_state.my_data)
+                            st.rerun() # 強制整個網頁重新讀取，讓上面的監控表立刻更新！
 
-            st.button("💾 儲存所有修改", use_container_width=True, type="primary", on_click=save_edits)
+                    with col_btn2:
+                        if st.button("⬇️ 下移", key=f"down_{sym}", disabled=(i == len(st.session_state.my_data['etfs']) - 1), use_container_width=True):
+                            for tmp in st.session_state.my_data['etfs']:
+                                t_sym = tmp['symbol']
+                                if f"edit_h_{t_sym}" in st.session_state: tmp['holdings'] = float(st.session_state[f"edit_h_{t_sym}"])
+                                if f"edit_c_{t_sym}" in st.session_state: tmp['cost'] = float(st.session_state[f"edit_c_{t_sym}"])
+
+                            st.session_state.my_data['etfs'][i + 1], st.session_state.my_data['etfs'][i] = \
+                            st.session_state.my_data['etfs'][i], st.session_state.my_data['etfs'][i + 1]
+                            save_to_json(st.session_state.my_data)
+                            st.rerun()
+
+                    with col_btn3:
+                        if st.button("🗑️ 刪除", key=f"del_{sym}", use_container_width=True):
+                            st.session_state.my_data['etfs'].pop(i)
+                            save_to_json(st.session_state.my_data)
+                            st.rerun()
+
+            # 獨立的儲存按鈕，強制重整
+            if st.button("💾 儲存所有修改", use_container_width=True, type="primary"):
+                for item in st.session_state.my_data['etfs']:
+                    sym = item['symbol']
+                    if f"edit_h_{sym}" in st.session_state:
+                        item['holdings'] = float(st.session_state[f"edit_h_{sym}"])
+                    if f"edit_c_{sym}" in st.session_state:
+                        item['cost'] = float(st.session_state[f"edit_c_{sym}"])
+                save_to_json(st.session_state.my_data)
+                st.rerun()
 
 with bot_c3:
     st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
