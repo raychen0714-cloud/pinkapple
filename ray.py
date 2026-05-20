@@ -190,6 +190,9 @@ if 'pledge' not in st.session_state.my_data:
 if 'total_received_divs' not in st.session_state.my_data:
     st.session_state.my_data['total_received_divs'] = 0.0
 
+if 'custom_dividends' not in st.session_state.my_data:
+    st.session_state.my_data['custom_dividends'] = {}
+    
 for etf in st.session_state.my_data['etfs']:
     if 'pledged_shares' not in etf:
         etf['pledged_shares'] = 0.0
@@ -489,8 +492,16 @@ def fetch_data(etf_list):
 
             is_announced, div_amount, ex_date, pay_date = False, 0, "待官方公告", "待官方公告"
             
+            # 🚀 優先讀取你在網頁手動輸入的最新配息，沒有手動輸入才用 Python 內建或 Yahoo 抓的
+            custom_cfg = st.session_state.my_data.get('custom_dividends', {}).get(item['symbol'])
             cfg = DIVIDEND_DB.get(item['symbol'])
-            if cfg:
+            
+            if custom_cfg:
+                div_amount = custom_cfg['v']
+                ex_date = custom_cfg['d']
+                pay_date = custom_cfg['p']
+                is_announced = True
+            elif cfg:
                 div_amount = cfg['v']
                 ex_date = cfg['d']
                 pay_date = cfg['p']
@@ -1202,6 +1213,50 @@ with bot_c1:
     if st.button("🔄 手動重新整理股價", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+# --- 🚀 全新加入：配息手動公告區 ---
+        with st.expander("📢 更新 / 修正最新配息數字", expanded=False):
+            st.info("若投信剛公布最新配息，Yahoo 尚未更新，您可在此手動輸入。系統將無條件優先採用！")
+            
+            div_options = [item['name'] for item in st.session_state.my_data['etfs']]
+            if div_options:
+                sel_div_name = st.selectbox("🎯 選擇要更新的 ETF：", div_options)
+                sel_div_sym = next(item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == sel_div_name)
+                
+                # 自動抓取目前的預設值
+                default_v = 0.0
+                default_d = datetime.today().strftime('%Y-%m-%d')
+                default_p = (datetime.today() + timedelta(days=28)).strftime('%Y-%m-%d')
+                
+                existing_custom = st.session_state.my_data.get('custom_dividends', {}).get(sel_div_sym)
+                if existing_custom:
+                    default_v = existing_custom['v']
+                    default_d = existing_custom['d']
+                    default_p = existing_custom['p']
+                    
+                col_d1, col_d2, col_d3 = st.columns(3)
+                with col_d1:
+                    new_v = st.number_input("💰 最新每股配息 (元)", min_value=0.0, value=float(default_v), step=0.01)
+                with col_d2:
+                    new_d = st.text_input("📅 除息日 (YYYY-MM-DD)", value=default_d)
+                with col_d3:
+                    new_p = st.text_input("🏦 發放日 (YYYY-MM-DD)", value=default_p)
+                
+                col_db1, col_db2 = st.columns(2)
+                with col_db1:
+                    if st.button("💾 儲存並覆蓋配息", type="primary", use_container_width=True):
+                        st.session_state.my_data['custom_dividends'][sel_div_sym] = {
+                            "v": new_v, "d": new_d, "p": new_p
+                        }
+                        save_to_json(st.session_state.my_data)
+                        st.cache_data.clear()
+                        st.rerun()
+                with col_db2:
+                    if existing_custom:
+                        if st.button("🗑️ 清除手動設定 (恢復系統預設)", use_container_width=True):
+                            del st.session_state.my_data['custom_dividends'][sel_div_sym]
+                            save_to_json(st.session_state.my_data)
+                            st.cache_data.clear()
+                            st.rerun()
 
 with bot_c2:
     with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=False):
