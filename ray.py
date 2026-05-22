@@ -167,8 +167,7 @@ def load_settings():
             {"symbol": "00927.TW", "name": "00927 群益半導體收益", "holdings": 20.0, "cost": 28.65, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 15.0, "cost": 28.10, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00992A.TW", "name": "00992A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            {"symbol": "2330.TW", "name": "2330 台積電", "holdings": 1.0, "cost": 780.00, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            {"symbol": "2454.TW", "name": "2454 聯發科", "holdings": 1.0, "cost": 1000.00, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0}
+            
         ], 
         "pledge": {"borrowed_amount": 0},
         "watchlist": [] 
