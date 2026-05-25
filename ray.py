@@ -437,8 +437,7 @@ def fetch_data(etf_list):
             mkt_val = shares * curr_p
             cost_val = shares * item['cost']
             
-            sell_cost_estimate = mkt_val * 0.002425
-            profit = mkt_val - cost_val - sell_cost_estimate
+            profit = mkt_val - cost_val
             roi = (profit / cost_val * 100) if cost_val != 0 else 0
 
             # 🚨 LINE 自動通知判斷邏輯 🚨
