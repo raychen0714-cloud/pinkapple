@@ -166,7 +166,7 @@ def load_settings():
             {"symbol": "00878.TW", "name": "00878 國泰永續高股息", "holdings": 22.0, "cost": 24.60, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00891.TW", "name": "00891 中信關鍵半導體", "holdings": 10.0, "cost": 33.97, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00927.TW", "name": "00927 群益半導體收益", "holdings": 20.0, "cost": 28.65, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 15.0, "cost": 28.10, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 10.0, "cost": 28.19, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00982A.TW", "name": "00982A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
         ], 
         "pledge": {"borrowed_amount": 0},
