@@ -177,16 +177,6 @@ def save_to_json(data):
     with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# 📢 建立 LINE Notify 專用推送函數
-def send_line_notify(token, msg):
-    if not token: return
-    url = "https://notify-api.line.me/api/notify"
-    headers = {"Authorization": f"Bearer {token}"}
-    data = {"message": f"\n{msg}"}
-    try:
-        requests.post(url, headers=headers, data=data)
-    except:
-        pass
 
 if 'my_data' not in st.session_state: 
     st.session_state.my_data = load_settings()
@@ -203,14 +193,7 @@ if 'total_received_divs' not in st.session_state.my_data:
 if 'custom_dividends' not in st.session_state.my_data:
     st.session_state.my_data['custom_dividends'] = {}
 
-# 🚨 LINE 通知必要的初始設定
-if 'line_token' not in st.session_state.my_data:
-    st.session_state.my_data['line_token'] = ""
-if 'line_alert_profit' not in st.session_state.my_data:
-    st.session_state.my_data['line_alert_profit'] = 10000.0
-if 'line_notified_today' not in st.session_state.my_data:
-    st.session_state.my_data['line_notified_today'] = {}
-    
+   
 for etf in st.session_state.my_data['etfs']:
     if 'pledged_shares' not in etf:
         etf['pledged_shares'] = 0.0
