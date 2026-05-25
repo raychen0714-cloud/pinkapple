@@ -177,6 +177,44 @@ def save_to_json(data):
     with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+# 📢 建立 LINE Notify 專用推送函數
+def send_line_notify(token, msg):
+    if not token: return
+    url = "https://notify-api.line.me/api/notify"
+    headers = {"Authorization": f"Bearer {token}"}
+    data = {"message": f"\n{msg}"}
+    try:
+        requests.post(url, headers=headers, data=data)
+    except:
+        pass
+
+if 'my_data' not in st.session_state: 
+    st.session_state.my_data = load_settings()
+
+if 'watchlist' not in st.session_state.my_data:
+    st.session_state.my_data['watchlist'] = []
+
+if 'pledge' not in st.session_state.my_data:
+    st.session_state.my_data['pledge'] = {"borrowed_amount": 0}
+
+if 'total_received_divs' not in st.session_state.my_data:
+    st.session_state.my_data['total_received_divs'] = 0.0
+
+if 'custom_dividends' not in st.session_state.my_data:
+    st.session_state.my_data['custom_dividends'] = {}
+
+# 🚨 LINE 通知必要的初始設定
+if 'line_token' not in st.session_state.my_data:
+    st.session_state.my_data['line_token'] = ""
+if 'line_alert_profit' not in st.session_state.my_data:
+    st.session_state.my_data['line_alert_profit'] = 10000.0
+if 'line_notified_today' not in st.session_state.my_data:
+    st.session_state.my_data['line_notified_today'] = {}
+    
+for etf in st.session_state.my_data['etfs']:
+    if 'pledged_shares' not in etf:
+        etf['pledged_shares'] = 0.0
+save_to_json(st.session_state.my_data)
 
 # --- 🚀 Callback 函數區 ---
 def auto_fill_etf_name():
@@ -1279,7 +1317,29 @@ with bot_c2:
                 st.rerun()
 
 with bot_c3:
-        
+    # 🌟 全新 LINE 通知設定介面
+    with st.expander("📱 LINE Notify 自動通知設定", expanded=False):
+        st.markdown("#### 1️⃣ 設定您的 LINE 權杖 (Token)")
+        st.info("請將申請好的 Token 貼在下方。當網頁掛著(開啟自動更新)且獲利達標時，就會自動傳 LINE 給你！")
+        new_token = st.text_input("LINE Notify Token：", value=st.session_state.my_data.get('line_token', ''), type="password")
+        new_alert = st.number_input("💸 單檔獲利多少元要通知我？", min_value=0.0, value=float(st.session_state.my_data.get('line_alert_profit', 10000.0)), step=1000.0)
+
+        col_line1, col_line2 = st.columns(2)
+        with col_line1:
+            if st.button("💾 儲存 LINE 設定", type="primary", use_container_width=True):
+                st.session_state.my_data['line_token'] = new_token
+                st.session_state.my_data['line_alert_profit'] = new_alert
+                save_to_json(st.session_state.my_data)
+                st.success("已儲存！")
+                st.rerun()
+        with col_line2:
+            if st.button("🔔 傳送測試訊息", use_container_width=True):
+                if new_token:
+                    send_line_notify(new_token, "這是一則來自您的「ETF 戰情室」測試訊息！如果收到，代表設定成功啦！")
+                    st.success("已送出，請檢查 LINE！")
+                else:
+                    st.error("請先填寫 Token 喔！")
+    
     # 原有的自動更新控制區
     st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
     st.markdown("#### ⚡ 系統自動更新")
