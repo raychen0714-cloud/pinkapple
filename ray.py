@@ -437,7 +437,12 @@ def fetch_data(etf_list):
             mkt_val = shares * curr_p
             cost_val = shares * item['cost']
             
-            sell_cost_estimate = mkt_val * 0.002425
+            # 🚀 升級版券商級損益算法：自動判斷 ETF 或 個股 的證交稅
+            is_etf = item['symbol'].startswith('00')
+            tax_rate = 0.001 if is_etf else 0.003
+            fee_rate = 0.001425  # 券商公定手續費率 0.1425%
+            
+            sell_cost_estimate = mkt_val * (tax_rate + fee_rate)
             profit = mkt_val - cost_val - sell_cost_estimate
             roi = (profit / cost_val * 100) if cost_val != 0 else 0
 
