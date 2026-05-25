@@ -1352,8 +1352,4 @@ with bot_c3:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-# 🚀 放在腳本最底層的自動更新執行邏輯 (已升級 30 秒)
-if st.session_state.auto_refresh_mode == "✅ USE (開啟)":
-    time.sleep(30)
-    st.cache_data.clear()
-    st.rerun()
+
