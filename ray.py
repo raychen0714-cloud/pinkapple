@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import time
 import altair as alt
-import requests  
+import requests
 
 # --- 1. 網頁基礎設定 ---
 st.set_page_config(page_title="ETF 投資戰情室", layout="wide")
@@ -34,7 +34,7 @@ st.markdown("""
     .pay-div-title { color: #b45f06; font-weight: bold; font-size: 13px; margin-bottom: 4px; }
     .pay-div-text { color: #783f04; font-size: 12px; font-weight: bold; line-height: 1.4; }
 
-    /* 三拼損益與領息橫列大看板樣式 (升級為四拼) */
+    /* 三拼損益與領息橫列大看板樣式 */
     .triple-box { background-color: #ffffff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 15px; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; margin-bottom: 10px; box-shadow: 2px 2px 8px rgba(0,0,0,0.04); gap: 10px; }
     .triple-col { flex: 1 1 22%; min-width: 140px; text-align: center; padding: 10px 0; }
     .triple-title { font-size: 14px; color: #757575; font-weight: bold; margin-bottom: 5px; }
@@ -126,8 +126,8 @@ DIVIDEND_SCHEDULE = {
     "0050.TW": [1, 7], "0056.TW": [1, 4, 7, 10], "00878.TW": [2, 5, 8, 11],
     "00891.TW": [2, 5, 8, 11], "00919.TW": [3, 6, 9, 12], "00927.TW": [1, 4, 7, 10],
     "00929.TW": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "00940.TW": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    "00981A.TW": [3, 6, 9, 12], # 🚀 修正：981A 改為季配息 (3, 6, 9, 12月)
-    "00982A.TW": [2, 5, 8, 11] , # 🚀 修正：982A 設定為季配息 (2, 5, 8, 11月)
+    "00981A.TW": [3, 6, 9, 12], 
+    "00982A.TW": [2, 5, 8, 11] ,
     "00918.TW": [3, 6, 9, 12],
 }
 
@@ -136,8 +136,8 @@ DIVIDEND_DB = {
     "00927.TW": {"v": 0.94, "d": "2026-04-18", "p": "2026-05-15"},  
     "00878.TW": {"v": 0.66, "d": "2026-05-19", "p": "2026-06-16"},   
     "00891.TW": {"v": 1.25, "d": "2026-05-19", "p": "2026-06-16"},   
-    "00982A.TW": {"v": 0.64, "d": "2026-05-19", "p": "2026-06-16"}, # ✅ 982A 配息 0.64 
-    "00981A.TW": {"v": 0.41, "d": "2026-03-17", "p": "2026-04-14"}, # 🚀 霸氣補上 981A 配息 0.41 (發放日推估為4月中)
+    "00982A.TW": {"v": 0.64, "d": "2026-05-19", "p": "2026-06-16"}, 
+    "00981A.TW": {"v": 0.41, "d": "2026-03-17", "p": "2026-04-14"}, 
 }
 
 ETF_CONSTITUENTS_DB = {
@@ -168,7 +168,6 @@ def load_settings():
             {"symbol": "00927.TW", "name": "00927 群益半導體收益", "holdings": 20.0, "cost": 28.65, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 15.0, "cost": 28.10, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00992A.TW", "name": "00992A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            
         ], 
         "pledge": {"borrowed_amount": 0},
         "watchlist": [] 
@@ -177,6 +176,17 @@ def load_settings():
 def save_to_json(data):
     with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+# 📢 建立 LINE Notify 專用推送函數
+def send_line_notify(token, msg):
+    if not token: return
+    url = "https://notify-api.line.me/api/notify"
+    headers = {"Authorization": f"Bearer {token}"}
+    data = {"message": f"\n{msg}"}
+    try:
+        requests.post(url, headers=headers, data=data)
+    except:
+        pass
 
 if 'my_data' not in st.session_state: 
     st.session_state.my_data = load_settings()
@@ -192,6 +202,14 @@ if 'total_received_divs' not in st.session_state.my_data:
 
 if 'custom_dividends' not in st.session_state.my_data:
     st.session_state.my_data['custom_dividends'] = {}
+
+# 🚨 LINE 通知必要的初始設定
+if 'line_token' not in st.session_state.my_data:
+    st.session_state.my_data['line_token'] = ""
+if 'line_alert_profit' not in st.session_state.my_data:
+    st.session_state.my_data['line_alert_profit'] = 10000.0
+if 'line_notified_today' not in st.session_state.my_data:
+    st.session_state.my_data['line_notified_today'] = {}
     
 for etf in st.session_state.my_data['etfs']:
     if 'pledged_shares' not in etf:
@@ -245,56 +263,6 @@ def move_etf_down(index):
         st.session_state.my_data['etfs'][index], st.session_state.my_data['etfs'][index + 1]
         save_to_json(st.session_state.my_data)
 
-def save_edits():
-    temp_list = []
-    # 這裡將綁定的 key 改為 symbol，避免上下移動時數字殘留
-    for item in st.session_state.my_data['etfs']:
-        sym = item['symbol']
-        h_val = st.session_state.get(f"edit_h_{sym}", item['holdings'])
-        c_val = st.session_state.get(f"edit_c_{sym}", item['cost'])
-        temp_list.append({
-            "symbol": item['symbol'],
-            "name": item['name'],
-            "holdings": h_val,
-            "cost": c_val,
-            "alert_high": item.get('alert_high', 0.0),
-            "alert_low": item.get('alert_low', 0.0),
-            "pledged_shares": item.get('pledged_shares', 0.0),
-            "ex_div_shares_custom": item.get('ex_div_shares_custom', h_val)
-        })
-    st.session_state.my_data['etfs'] = temp_list
-    save_to_json(st.session_state.my_data)
-
-# --- 自選股 Callback ---
-def auto_fill_wl_name():
-    raw_sym = st.session_state.get('add_sym_wl', '')
-    clean_sym = raw_sym.strip().upper().replace(".TW", "")
-    if clean_sym:
-        st.session_state.add_name_wl = ETF_NAME_DB.get(clean_sym, f"{clean_sym}")
-    else:
-        st.session_state.add_name_wl = ""
-
-def add_new_wl():
-    raw_sym = st.session_state.get('add_sym_wl', '')
-    new_name = st.session_state.get('add_name_wl', '')
-    clean_symbol = raw_sym.strip().upper().replace(".TW", "")
-    if clean_symbol and new_name:
-        final_symbol = f"{clean_symbol}.TW"
-        if any(x['symbol'] == final_symbol for x in st.session_state.my_data['watchlist']):
-            st.warning("該標的已在自選名單中！")
-            return
-        st.session_state.my_data['watchlist'].append({
-            "symbol": final_symbol, "name": new_name
-        })
-        save_to_json(st.session_state.my_data)
-        st.session_state.add_sym_wl = ""
-        st.session_state.add_name_wl = ""
-
-def delete_wl(index):
-    if 0 <= index < len(st.session_state.my_data['watchlist']):
-        st.session_state.my_data['watchlist'].pop(index)
-        save_to_json(st.session_state.my_data)
-
 # 初始化按鈕狀態
 if 'show_us' not in st.session_state: st.session_state.show_us = False
 if 'show_tw' not in st.session_state: st.session_state.show_tw = False
@@ -335,9 +303,7 @@ def fetch_macro_data():
                     res[region][name] = {"price": curr, "diff": curr - prev, "pct": ((curr - prev)/prev)*100, "date": hist.index[-1].strftime("%m/%d")}
             except: pass
 
-    # 🚀 突破證交所封鎖機制 (修正大盤代號辨識)
     try:
-        # 改用乾淨的核心代號 (c) 來做配對
         twse_targets_map = {"t00": "台股加權 (大盤)", "2330": "台積電 (台股)", "2454": "聯發科 (台股)"}
         twse_query = "tse_t00.tw|tse_2330.tw|tse_2454.tw"
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -352,7 +318,7 @@ def fetch_macro_data():
         
         today_str = datetime.today().strftime("%m/%d")
         for msg in msg_array:
-            c = msg.get('c', '') # 直接抓取代號：t00, 2330, 2454
+            c = msg.get('c', '')
             
             if c in twse_targets_map:
                 name = twse_targets_map[c]
@@ -400,18 +366,17 @@ def fetch_data(etf_list):
     radar_ex, radar_pay, price_alerts = [], [], []
     monthly_calendar = {i: {"amount": 0, "sources": []} for i in range(1, 13)} 
     today = datetime.today()
+    today_str_line = today.strftime('%Y-%m-%d')
 
     if 'ex_div_shares_v2' not in st.session_state:
         st.session_state['ex_div_shares_v2'] = {}
 
-    # 🚀 【重大安全升級】修正 TWSE API 批次對應邏輯，精準切分上市與上櫃/主動型標的
     twse_rt_data = {}
     try:
         tw_symbols = [item['symbol'].replace('.TW', '') for item in etf_list if '.TW' in item['symbol']]
         if tw_symbols:
             channels = []
             for sym in tw_symbols:
-                # 採用雙向並行策略：一律同時查詢 tse 與 otc，再根據回傳進行精準解析
                 channels.append(f"tse_{sym}.tw")
                 channels.append(f"otc_{sym}.tw")
             ts = int(time.time() * 1000)
@@ -421,11 +386,9 @@ def fetch_data(etf_list):
             msg_array = req.json().get('msgArray', [])
             for msg in msg_array:
                 sym_key = msg['c'] + ".TW"
-                p = msg.get('z', '-') # z 是最新成交價
-                y = msg.get('y', '0') # y 是昨日收盤價
+                p = msg.get('z', '-') 
+                y = msg.get('y', '0') 
                 try:
-                    # 💡 關鍵修正：如果證交所瞬間沒傳回成交價 (p 是 '-')，我們就不強迫覆蓋，
-                    # 讓它乖乖退回去用 Yahoo 財經的報價，才不會讓漲跌變成 0！
                     if p != '-' and float(p) > 0:
                         twse_rt_data[sym_key] = {
                             'price': float(p),
@@ -435,6 +398,11 @@ def fetch_data(etf_list):
                 except: pass
     except Exception as e:
         pass 
+
+    # 取得設定好的 LINE 參數
+    l_token = st.session_state.my_data.get('line_token', '')
+    l_threshold = float(st.session_state.my_data.get('line_alert_profit', 0.0))
+    state_changed = False
 
     for item in etf_list:
         try:
@@ -451,7 +419,6 @@ def fetch_data(etf_list):
             rt_vol = tk.fast_info.get('lastVolume')
             vol = rt_vol if rt_vol is not None else hist['Volume'].iloc[-1]
             
-            # 🚀 【神級覆蓋】：若證交所官方回傳資料完全合法且大於 0，強制蓋掉 Yahoo
             if item['symbol'] in twse_rt_data and twse_rt_data[item['symbol']]['price'] > 0:
                 curr_p = twse_rt_data[item['symbol']]['price']
                 prev_close = twse_rt_data[item['symbol']]['prev_close']
@@ -469,11 +436,22 @@ def fetch_data(etf_list):
             mkt_val = shares * curr_p
             cost_val = shares * item['cost']
             
-            # 🚀 【對齊券商損益】：移除賣出手續費預扣，讓獲利與券商 App 一模一樣
-            # 依照你的券商邏輯：預扣約 0.2425% 的交易稅與手續費 (ETF 0.1% 稅 + 0.1425% 手續費)
             sell_cost_estimate = mkt_val * 0.002425
             profit = mkt_val - cost_val - sell_cost_estimate
             roi = (profit / cost_val * 100) if cost_val != 0 else 0
+
+            # 🚨 LINE 自動通知判斷邏輯 🚨
+            if l_token and l_threshold > 0 and profit >= l_threshold:
+                # 檢查今天是否已經通知過，避免一直重整一直傳
+                last_date = st.session_state.my_data.get('line_notified_today', {}).get(item['symbol'], '')
+                if last_date != today_str_line:
+                    msg = f"🚀 財富報喜！達標通知\n【{item['name']}】\n目前獲利已達：+${profit:,.0f} 元\n最新股價：{curr_p:.2f} 元"
+                    send_line_notify(l_token, msg)
+                    
+                    if 'line_notified_today' not in st.session_state.my_data:
+                        st.session_state.my_data['line_notified_today'] = {}
+                    st.session_state.my_data['line_notified_today'][item['symbol']] = today_str_line
+                    state_changed = True
             
             today_diff = curr_p - prev_close
             today_profit = shares * today_diff
@@ -492,7 +470,6 @@ def fetch_data(etf_list):
 
             is_announced, div_amount, ex_date, pay_date = False, 0, "待官方公告", "待官方公告"
             
-            # 🚀 優先讀取你在網頁手動輸入的最新配息，沒有手動輸入才用 Python 內建或 Yahoo 抓的
             custom_cfg = st.session_state.my_data.get('custom_dividends', {}).get(item['symbol'])
             cfg = DIVIDEND_DB.get(item['symbol'])
             
@@ -591,15 +568,14 @@ def fetch_data(etf_list):
             today_diff_str = f"+{today_diff:.2f}" if today_diff >= 0 else f"{today_diff:.2f}"
             vol_wan_str = f"{vol / 10000000:.2f} 萬" if vol > 0 else "無資料"
 
-            # 🚀 新增：將剛剛算好的總損益 (profit) 格式化成帶有正負號的字串
             total_pnl_str = f"+${profit:,.0f}" if profit >= 0 else f"-${abs(profit):,.0f}"
 
             tech_results.append({
-                "ETF 名稱": display_name,  # 順便修復了原本的錯字
+                "ETF 名稱": display_name, 
                 "股票張數": item['holdings'], 
                 "現價": round(curr_p, 2),
                 "均價": item['cost'],
-                "總損益": total_pnl_str,    # 👈 就是這一行！成功加入總損益
+                "總損益": total_pnl_str,
                 "今日損益": today_pnl_str,
                 "今日漲跌(點)": today_diff_str,
                 "今日漲跌幅": today_pct_str, 
@@ -607,6 +583,9 @@ def fetch_data(etf_list):
             })
             
         except Exception as e: continue
+        
+    if state_changed:
+        save_to_json(st.session_state.my_data)
         
     return pd.DataFrame(results), pd.DataFrame(tech_results), total_mkt, total_cost, total_div, total_today_pnl, radar_ex, radar_pay, price_alerts, monthly_calendar
 
@@ -1126,8 +1105,8 @@ if st.session_state.show_pledge:
     else:
         st.info("⚠️ 目前尚無持股資料，無法進行質押計算。")
     st.write("---")
-# --- 📜 展開持股歷史情報 ---
 
+# --- 📜 展開持股歷史情報 ---
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_daily_history_masterpiece(symbol, days):
     try:
@@ -1213,50 +1192,49 @@ with bot_c1:
     if st.button("🔄 手動重新整理股價", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-# --- 🚀 全新加入：配息手動公告區 ---
-        with st.expander("📢 更新 / 修正最新配息數字", expanded=False):
-            st.info("若投信剛公布最新配息，Yahoo 尚未更新，您可在此手動輸入。系統將無條件優先採用！")
+
+    with st.expander("📢 更新 / 修正最新配息數字", expanded=False):
+        st.info("若投信剛公布最新配息，Yahoo 尚未更新，您可在此手動輸入。系統將無條件優先採用！")
+        
+        div_options = [item['name'] for item in st.session_state.my_data['etfs']]
+        if div_options:
+            sel_div_name = st.selectbox("🎯 選擇要更新的 ETF：", div_options)
+            sel_div_sym = next(item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == sel_div_name)
             
-            div_options = [item['name'] for item in st.session_state.my_data['etfs']]
-            if div_options:
-                sel_div_name = st.selectbox("🎯 選擇要更新的 ETF：", div_options)
-                sel_div_sym = next(item['symbol'] for item in st.session_state.my_data['etfs'] if item['name'] == sel_div_name)
+            default_v = 0.0
+            default_d = datetime.today().strftime('%Y-%m-%d')
+            default_p = (datetime.today() + timedelta(days=28)).strftime('%Y-%m-%d')
+            
+            existing_custom = st.session_state.my_data.get('custom_dividends', {}).get(sel_div_sym)
+            if existing_custom:
+                default_v = existing_custom['v']
+                default_d = existing_custom['d']
+                default_p = existing_custom['p']
                 
-                # 自動抓取目前的預設值
-                default_v = 0.0
-                default_d = datetime.today().strftime('%Y-%m-%d')
-                default_p = (datetime.today() + timedelta(days=28)).strftime('%Y-%m-%d')
-                
-                existing_custom = st.session_state.my_data.get('custom_dividends', {}).get(sel_div_sym)
+            col_d1, col_d2, col_d3 = st.columns(3)
+            with col_d1:
+                new_v = st.number_input("💰 最新每股配息 (元)", min_value=0.0, value=float(default_v), step=0.01)
+            with col_d2:
+                new_d = st.text_input("📅 除息日 (YYYY-MM-DD)", value=default_d)
+            with col_d3:
+                new_p = st.text_input("🏦 發放日 (YYYY-MM-DD)", value=default_p)
+            
+            col_db1, col_db2 = st.columns(2)
+            with col_db1:
+                if st.button("💾 儲存並覆蓋配息", type="primary", use_container_width=True):
+                    st.session_state.my_data['custom_dividends'][sel_div_sym] = {
+                        "v": new_v, "d": new_d, "p": new_p
+                    }
+                    save_to_json(st.session_state.my_data)
+                    st.cache_data.clear()
+                    st.rerun()
+            with col_db2:
                 if existing_custom:
-                    default_v = existing_custom['v']
-                    default_d = existing_custom['d']
-                    default_p = existing_custom['p']
-                    
-                col_d1, col_d2, col_d3 = st.columns(3)
-                with col_d1:
-                    new_v = st.number_input("💰 最新每股配息 (元)", min_value=0.0, value=float(default_v), step=0.01)
-                with col_d2:
-                    new_d = st.text_input("📅 除息日 (YYYY-MM-DD)", value=default_d)
-                with col_d3:
-                    new_p = st.text_input("🏦 發放日 (YYYY-MM-DD)", value=default_p)
-                
-                col_db1, col_db2 = st.columns(2)
-                with col_db1:
-                    if st.button("💾 儲存並覆蓋配息", type="primary", use_container_width=True):
-                        st.session_state.my_data['custom_dividends'][sel_div_sym] = {
-                            "v": new_v, "d": new_d, "p": new_p
-                        }
+                    if st.button("🗑️ 清除手動設定 (恢復系統預設)", use_container_width=True):
+                        del st.session_state.my_data['custom_dividends'][sel_div_sym]
                         save_to_json(st.session_state.my_data)
                         st.cache_data.clear()
                         st.rerun()
-                with col_db2:
-                    if existing_custom:
-                        if st.button("🗑️ 清除手動設定 (恢復系統預設)", use_container_width=True):
-                            del st.session_state.my_data['custom_dividends'][sel_div_sym]
-                            save_to_json(st.session_state.my_data)
-                            st.cache_data.clear()
-                            st.rerun()
 
 with bot_c2:
     with st.expander("⚙️ 標的管理 (庫存新增 / 修改 / 刪除)", expanded=False):
@@ -1294,17 +1272,15 @@ with bot_c2:
                     col_btn1, col_btn2, col_btn3 = st.columns(3)
                     with col_btn1:
                         if st.button("⬆️ 上移", key=f"up_{sym}", disabled=(i == 0), use_container_width=True):
-                            # 移動前，先自動把當前輸入框的最新數字存起來，避免移動後數字遺失
                             for tmp in st.session_state.my_data['etfs']:
                                 t_sym = tmp['symbol']
                                 if f"edit_h_{t_sym}" in st.session_state: tmp['holdings'] = float(st.session_state[f"edit_h_{t_sym}"])
                                 if f"edit_c_{t_sym}" in st.session_state: tmp['cost'] = float(st.session_state[f"edit_c_{t_sym}"])
                             
-                            # 執行排序交換
                             st.session_state.my_data['etfs'][i - 1], st.session_state.my_data['etfs'][i] = \
                             st.session_state.my_data['etfs'][i], st.session_state.my_data['etfs'][i - 1]
                             save_to_json(st.session_state.my_data)
-                            st.rerun() # 強制整個網頁重新讀取，讓上面的監控表立刻更新！
+                            st.rerun()
 
                     with col_btn2:
                         if st.button("⬇️ 下移", key=f"down_{sym}", disabled=(i == len(st.session_state.my_data['etfs']) - 1), use_container_width=True):
@@ -1324,7 +1300,6 @@ with bot_c2:
                             save_to_json(st.session_state.my_data)
                             st.rerun()
 
-            # 獨立的儲存按鈕，強制重整
             if st.button("💾 儲存所有修改", use_container_width=True, type="primary"):
                 for item in st.session_state.my_data['etfs']:
                     sym = item['symbol']
@@ -1336,6 +1311,30 @@ with bot_c2:
                 st.rerun()
 
 with bot_c3:
+    # 🌟 全新 LINE 通知設定介面
+    with st.expander("📱 LINE Notify 自動通知設定", expanded=False):
+        st.markdown("#### 1️⃣ 設定您的 LINE 權杖 (Token)")
+        st.info("請將申請好的 Token 貼在下方。當網頁掛著(開啟自動更新)且獲利達標時，就會自動傳 LINE 給你！")
+        new_token = st.text_input("LINE Notify Token：", value=st.session_state.my_data.get('line_token', ''), type="password")
+        new_alert = st.number_input("💸 單檔獲利多少元要通知我？", min_value=0.0, value=float(st.session_state.my_data.get('line_alert_profit', 10000.0)), step=1000.0)
+
+        col_line1, col_line2 = st.columns(2)
+        with col_line1:
+            if st.button("💾 儲存 LINE 設定", type="primary", use_container_width=True):
+                st.session_state.my_data['line_token'] = new_token
+                st.session_state.my_data['line_alert_profit'] = new_alert
+                save_to_json(st.session_state.my_data)
+                st.success("已儲存！")
+                st.rerun()
+        with col_line2:
+            if st.button("🔔 傳送測試訊息", use_container_width=True):
+                if new_token:
+                    send_line_notify(new_token, "這是一則來自您的「ETF 戰情室」測試訊息！如果收到，代表設定成功啦！")
+                    st.success("已送出，請檢查 LINE！")
+                else:
+                    st.error("請先填寫 Token 喔！")
+    
+    # 原有的自動更新控制區
     st.markdown("<div class='auto-refresh-box'>", unsafe_allow_html=True)
     st.markdown("#### ⚡ 系統自動更新")
     st.caption("開啟後每 30 秒自動重整抓取最新即時股價")
