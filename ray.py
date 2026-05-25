@@ -359,6 +359,7 @@ def render_macro_cards(data_dict, region_prefix):
         idx += 1
 
 # --- 4. 核心數據計算 ---
+@st.cache_data(ttl=30, show_spinner=False)
 def fetch_data(etf_list):
     if not etf_list: return pd.DataFrame(), pd.DataFrame(), 0, 0, 0, 0, [], [], [], {i: {"amount": 0, "sources": []} for i in range(1, 13)}
     results, tech_results = [], []
