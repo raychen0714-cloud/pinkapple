@@ -113,7 +113,7 @@ ACTIVE_ETFS = {
     "00403A": "00403A 主動統一台股升級50",
     "00999A": "00999A 主動野村臺灣動能",
     "00401A": "00401A 主動摩根台灣鑫收",
-    "00992A": "00992A 主動群益科技創新",
+    "00982A": "00982A 主動群益科技創新",
     "00400A": "00400A 主動國泰動能高息",
     "00997A": "00997A 主動群益美國增長",
     "00988A": "00988A 主動統一全球創新",
@@ -167,7 +167,7 @@ def load_settings():
             {"symbol": "00891.TW", "name": "00891 中信關鍵半導體", "holdings": 10.0, "cost": 33.97, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00927.TW", "name": "00927 群益半導體收益", "holdings": 20.0, "cost": 28.65, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
             {"symbol": "00981A.TW", "name": "00981A 主動統一台股增長", "holdings": 15.0, "cost": 28.10, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
-            {"symbol": "00992A.TW", "name": "00992A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
+            {"symbol": "00982A.TW", "name": "00982A 主動群益科技創新", "holdings": 10.0, "cost": 22.95, "alert_high": 0.0, "alert_low": 0.0, "pledged_shares": 0.0},
         ], 
         "pledge": {"borrowed_amount": 0},
         "watchlist": [] 
