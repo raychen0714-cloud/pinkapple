@@ -67,7 +67,7 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 ---
+# --- 🧠 3. 核心運算引擎 (均線默默在背景算，不吐出數字欄位) ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit):
     
@@ -88,7 +88,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             if hist.empty or len(hist) < 60: continue
             
             close_px = hist['Close'].iloc[-1]
-            
             if close_px > price_limit: continue
             
             prev_px = hist['Close'].iloc[-2]
@@ -96,6 +95,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             
             if vol < 1000 and target_type == "個股": continue 
 
+            # 默默在背景計算均線，不顯示在前端
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
             ma5 = hist['Close'].tail(5).mean()    
             ma20 = hist['Close'].tail(20).mean()  
@@ -105,15 +105,17 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             px_up = close_px > prev_px               
             vol_up = vol > vol_5ma                   
             
+            # 根據背景均線計算出中文趨勢
             if close_px > ma5 > ma20 > ma60:
-                trend_status = "🔥 多頭排列 (極強)" 
+                trend_status = "🔥 多頭排列 (趨勢極強)" 
             elif close_px < ma5 < ma20 < ma60:
-                trend_status = "🧊 空頭排列 (極弱)" 
+                trend_status = "🧊 空頭排列 (趨勢極弱)" 
             elif close_px > ma60:
-                trend_status = "🔼 站上季線 (偏多)" 
+                trend_status = "🔼 站上季線 (波段偏多)" 
             else:
-                trend_status = "🔽 跌破季線 (偏空)" 
+                trend_status = "🔽 跌破季線 (波段偏空)" 
 
+            # 量價與背離判斷
             if px_up and vol_up:
                 status = "價漲量增"
                 note = "🟢 燃料充足，可續抱或觀察"
@@ -130,16 +132,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             if bias > 10:
                 note = "🔥 乖離率過大，極度危險勿追高！"
                 
+            # 這裡把 5MA、20MA、60MA 的數字欄位拿掉了！只留下看得懂的中文
             results.append({
                 "代號": ticker.replace(".TW", ""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
-                "5MA": round(ma5, 2),
-                "20MA": round(ma20, 2),
-                "60MA": round(ma60, 2),
-                "均線格局": trend_status,  
                 "成交量(張)": int(vol),
-                "狀態": status,
+                "趨勢格局": trend_status,  
+                "量價型態": status,
                 "🤖 系統建議": note
             })
         except:
@@ -155,7 +155,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
 # --- 📊 4. 畫面渲染 ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("系統正在進行量價分析與背離過濾，請稍候..."):
+with st.spinner("系統正在進行量價分析與趨勢過濾，請稍候..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price)
 
 if not final_data.empty:
@@ -164,4 +164,4 @@ else:
     st.info("目前您選擇的產業中，沒有符合預算且具備流動性的標的。您可以嘗試放寬「最高價位」或勾選更多產業。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已自動過濾流動性不足之標的。乖離率 > 10% 系統將自動發出防追高警示。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+st.caption("📝 說明：系統已自動依據均線與量價進行背景運算。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
