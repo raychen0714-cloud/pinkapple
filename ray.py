@@ -7,19 +7,22 @@ st.set_page_config(page_title="PRO 戰情室", layout="wide")
 st.title("🚀 PRO 級自動化決策戰情室")
 st.markdown("---")
 
-# --- 📂 1. 定義標的池 (避免全市場掃描，確保秒開) ---
-# 這裡可以隨時手動增減你想觀察的股票代號
+# --- 📂 1. 定義標的池 (🔥已加入中文名稱與擴充產業🔥) ---
+# 使用字典格式，讓程式可以秒抓名稱，不用等 Yahoo 慢慢查
 STOCK_UNIVERSE = {
-    "半導體": ["2303.TW", "2330.TW", "2344.TW", "2449.TW", "3711.TW", "3034.TW"],
-    "光電與面板": ["3481.TW", "2409.TW", "6116.TW", "2448.TW"],
-    "航運": ["2603.TW", "2609.TW", "2615.TW", "2610.TW"],
-    "電子與代工": ["2317.TW", "2382.TW", "3231.TW", "2356.TW"]
+    "半導體": {"2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光", "3034.TW": "聯詠"},
+    "光電與面板": {"3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶"},
+    "航運": {"2603.TW": "長榮", "2609.TW": "陽明", "2615.TW": "萬海", "2610.TW": "華航", "2618.TW": "長榮航"},
+    "電子與電腦周邊": {"2317.TW": "鴻海", "2382.TW": "廣達", "3231.TW": "緯創", "2356.TW": "英業達", "2324.TW": "仁寶"},
+    "金融": {"2881.TW": "富邦金", "2882.TW": "國泰金", "2891.TW": "中信金", "2886.TW": "兆豐金"},
+    "重電與綠能": {"1519.TW": "華城", "1503.TW": "士電", "1513.TW": "中興電", "1514.TW": "亞力"},
+    "營建與鋼鐵": {"2002.TW": "中鋼", "2520.TW": "冠德", "2548.TW": "華固", "2014.TW": "中鴻"}
 }
 
 ETF_UNIVERSE = {
-    "高股息": ["00878.TW", "0056.TW", "00919.TW", "00929.TW"],
-    "半導體與科技": ["00927.TW", "00881.TW", "00891.TW"],
-    "大盤型": ["006208.TW"]
+    "高股息": {"00878.TW": "國泰永續高股息", "0056.TW": "元大高股息", "00919.TW": "群益精選高息", "00929.TW": "復華科技優息"},
+    "半導體與科技": {"00927.TW": "群益半導體收益", "00881.TW": "國泰台灣5G+", "00891.TW": "中信關鍵半導體"},
+    "大盤與其他": {"006208.TW": "富邦台50", "00631L.TW": "元大台灣50正2"} 
 }
 
 # --- 🎛️ 2. 動態篩選控制台 (UI) ---
@@ -38,16 +41,16 @@ max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, ste
 # --- 🧠 3. 核心運算引擎 (加入快取與自動決策邏輯) ---
 @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁請求 Yahoo 導致變慢
 def fetch_and_analyze(categories, universe_dict, price_limit):
-    # 組合要查詢的代號清單
-    tickers_to_fetch = []
+    # 組合要查詢的代號與名稱字典
+    tickers_to_fetch = {}
     for cat in categories:
-        tickers_to_fetch.extend(universe_dict[cat])
+        tickers_to_fetch.update(universe_dict[cat])
     
     if not tickers_to_fetch:
         return pd.DataFrame()
 
     results = []
-    for ticker in tickers_to_fetch:
+    for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
             # 抓取近 1 個月資料來算 20日線 (月線) 與均量
@@ -93,6 +96,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
                 
             results.append({
                 "代號": ticker.replace(".TW", ""),
+                "名稱": name,  # 🔥 這裡把中文名字加進來了！
                 "現價": round(close_px, 2),
                 "成交量(張)": int(vol),
                 "狀態": status,
