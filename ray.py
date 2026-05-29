@@ -7,14 +7,15 @@ st.set_page_config(page_title="PRO 戰情室", layout="wide")
 st.title("🚀 PRO 級自動化決策戰情室")
 st.markdown("---")
 
-# --- 📂 1. 定義標的池 (超級擴充版大水庫) ---
+# --- 📂 1. 定義標的池 (超級擴充版大水庫 - 🔥新增6147等標的) ---
 STOCK_UNIVERSE = {
     "半導體": {
         "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
         "3034.TW": "聯詠", "2379.TW": "瑞昱", "2344.TW": "華邦電", "2408.TW": "南亞科", 
         "3443.TW": "創意", "3661.TW": "世芯-KY", "6415.TW": "矽力-KY", "8046.TW": "南電", 
         "3189.TW": "景碩", "3037.TW": "欣興", "5347.TW": "世界先進", "6239.TW": "力成",
-        "2338.TW": "光罩", "3583.TW": "辛耘", "3131.TW": "弘塑"
+        "2338.TW": "光罩", "3583.TW": "辛耘", "3131.TW": "弘塑", "6147.TW": "頎邦",
+        "3227.TW": "原相", "2449.TW": "京元電子"
     },
     "光電與面板": {
         "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光", 
@@ -67,7 +68,7 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 (🔥 雙引擎架構：個股看量價，ETF看趨勢 🔥) ---
+# --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
     
@@ -104,7 +105,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             px_up = close_px > prev_px               
             vol_up = vol > vol_5ma                   
             
-            # 判斷均線格局
             if close_px > ma5 > ma20 > ma60:
                 trend_status = "🔥 多頭排列 (強勢)" 
             elif close_px < ma5 < ma20 < ma60:
@@ -114,70 +114,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             else:
                 trend_status = "🔽 跌破季線 (偏空)" 
 
-            # --- 🤖 雙引擎決策邏輯 ---
             if current_type == "ETF":
-                # 【ETF 存股引擎】不看量價，只看趨勢
-                status = "追蹤指數" # ETF 不需要顯示量價型態
+                status = "追蹤指數"
                 if trend_status == "🔥 多頭排列 (強勢)":
                     note = "🟢 長線多頭，適合定期定額續抱"
-                elif trend_status == "🔼 站上季線 (偏多)":
-                    note = "🟡 穩步墊高，逢回踩月線可加碼"
-                elif trend_status == "🔽 跌破季線 (偏空)":
-                    note = "⚠️ 跌破生命線，建議暫停加碼觀察"
-                else:
-                    note = "🚨 空頭探底，請勿輕易攤平接刀"
-            else:
-                # 【個股飆股引擎】嚴格檢視量價與主力動能
-                if px_up and vol_up:
-                    status = "價漲量增"
-                    note = "🟢 燃料充足，強勢格局可續抱！"
-                elif px_up and not vol_up:
-                    status = "價漲量縮 (頂背離)"
-                    note = "🟡 量能未跟上，持股續抱，空手勿追"
-                elif not px_up and vol_up:
-                    status = "價跌量增"
-                    note = "🚨 賣壓沉重，跌破月線請停損"
-                else:
-                    status = "價跌量縮"
-                    note = "⚪ 量縮回檔，觀察季線支撐"
-                
-            # 乖離率過熱防護
-            if bias > 20:
-                note = "🔥 乖離率>20%，短線極度過熱，請獲利了結"
-                
-            results.append({
-                "代號": ticker.replace(".TW", ""), 
-                "名稱": name,
-                "現價": round(close_px, 2), 
-                "成交量(張)": int(vol),
-                "趨勢格局": trend_status,  
-                "量價型態": status,
-                "🤖 系統建議": note
-            })
-        except:
-            continue
-            
-    df = pd.DataFrame(results)
-    
-    if not df.empty:
-        df = df.sort_values(by="成交量(張)", ascending=False)
-        
-    return df 
-
-# --- 📊 4. 畫面渲染 ---
-st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
-
-with st.spinner("系統正在進行背景運算與過濾，請稍候..."):
-    # 將 target_type 傳入函數，讓系統知道現在要用哪顆引擎
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
-
-if not final_data.empty:
-    # 針對 ETF 隱藏「量價型態」這個不需要的欄位，畫面更乾淨
-    if target_type == "ETF":
-        final_data = final_data.drop(columns=["量價型態"])
-    st.dataframe(final_data, use_container_width=True, hide_index=True)
-else:
-    st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
-
-st.markdown("---")
-st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 偵測長線存股趨勢。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+                elif trend_status == "🔼 站上季線
