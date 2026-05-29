@@ -67,9 +67,9 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 (邏輯放寬，讓綠燈亮起來！) ---
+# --- 🧠 3. 核心運算引擎 (🔥 雙引擎架構：個股看量價，ETF看趨勢 🔥) ---
 @st.cache_data(ttl=300) 
-def fetch_and_analyze(categories, universe_dict, price_limit):
+def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
     
     tickers_to_fetch = {}
     for cat in categories:
@@ -93,7 +93,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             prev_px = hist['Close'].iloc[-2]
             vol = hist['Volume'].iloc[-1] / 1000  
             
-            if vol < 1000 and target_type == "個股": continue 
+            if vol < 1000 and current_type == "個股": continue 
 
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
             ma5 = hist['Close'].tail(5).mean()    
@@ -104,7 +104,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             px_up = close_px > prev_px               
             vol_up = vol > vol_5ma                   
             
-            # 趨勢格局
+            # 判斷均線格局
             if close_px > ma5 > ma20 > ma60:
                 trend_status = "🔥 多頭排列 (強勢)" 
             elif close_px < ma5 < ma20 < ma60:
@@ -114,23 +114,36 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             else:
                 trend_status = "🔽 跌破季線 (偏空)" 
 
-            # 🔥 修正後的量價與背離判斷 (不會再動不動就叫你跑了)
-            if px_up and vol_up:
-                status = "價漲量增"
-                note = "🟢 燃料充足，強勢格局可續抱！"
-            elif px_up and not vol_up:
-                status = "價漲量平/縮"
-                note = "🟡 穩步墊高，持股續抱，空手勿追"
-            elif not px_up and vol_up:
-                status = "價跌量增"
-                note = "🚨 賣壓沉重，跌破月線請停損"
+            # --- 🤖 雙引擎決策邏輯 ---
+            if current_type == "ETF":
+                # 【ETF 存股引擎】不看量價，只看趨勢
+                status = "追蹤指數" # ETF 不需要顯示量價型態
+                if trend_status == "🔥 多頭排列 (強勢)":
+                    note = "🟢 長線多頭，適合定期定額續抱"
+                elif trend_status == "🔼 站上季線 (偏多)":
+                    note = "🟡 穩步墊高，逢回踩月線可加碼"
+                elif trend_status == "🔽 跌破季線 (偏空)":
+                    note = "⚠️ 跌破生命線，建議暫停加碼觀察"
+                else:
+                    note = "🚨 空頭探底，請勿輕易攤平接刀"
             else:
-                status = "價跌量縮"
-                note = "⚪ 量縮回檔，觀察季線支撐"
+                # 【個股飆股引擎】嚴格檢視量價與主力動能
+                if px_up and vol_up:
+                    status = "價漲量增"
+                    note = "🟢 燃料充足，強勢格局可續抱！"
+                elif px_up and not vol_up:
+                    status = "價漲量縮 (頂背離)"
+                    note = "🟡 量能未跟上，持股續抱，空手勿追"
+                elif not px_up and vol_up:
+                    status = "價跌量增"
+                    note = "🚨 賣壓沉重，跌破月線請停損"
+                else:
+                    status = "價跌量縮"
+                    note = "⚪ 量縮回檔，觀察季線支撐"
                 
-            # 乖離率門檻從 10% 提高到 20%，真正過熱才會覆蓋警告
+            # 乖離率過熱防護
             if bias > 20:
-                note = "🔥 乖離率>20%，短線過熱，適度獲利了結"
+                note = "🔥 乖離率>20%，短線極度過熱，請獲利了結"
                 
             results.append({
                 "代號": ticker.replace(".TW", ""), 
@@ -154,13 +167,17 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
 # --- 📊 4. 畫面渲染 ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("系統正在進行量價分析與趨勢過濾，請稍候..."):
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price)
+with st.spinner("系統正在進行背景運算與過濾，請稍候..."):
+    # 將 target_type 傳入函數，讓系統知道現在要用哪顆引擎
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
 
 if not final_data.empty:
+    # 針對 ETF 隱藏「量價型態」這個不需要的欄位，畫面更乾淨
+    if target_type == "ETF":
+        final_data = final_data.drop(columns=["量價型態"])
     st.dataframe(final_data, use_container_width=True, hide_index=True)
 else:
-    st.info("目前您選擇的產業中，沒有符合預算且具備流動性的標的。您可以嘗試放寬「最高價位」或勾選更多產業。")
+    st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已自動依據均線與量價進行背景運算。短線過熱(乖離率>20%)將發出防追高警示。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 偵測長線存股趨勢。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
