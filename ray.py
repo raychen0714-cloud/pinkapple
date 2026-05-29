@@ -67,7 +67,7 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 (均線默默在背景算，不吐出數字欄位) ---
+# --- 🧠 3. 核心運算引擎 (邏輯放寬，讓綠燈亮起來！) ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit):
     
@@ -95,7 +95,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             
             if vol < 1000 and target_type == "個股": continue 
 
-            # 默默在背景計算均線，不顯示在前端
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
             ma5 = hist['Close'].tail(5).mean()    
             ma20 = hist['Close'].tail(20).mean()  
@@ -105,34 +104,34 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             px_up = close_px > prev_px               
             vol_up = vol > vol_5ma                   
             
-            # 根據背景均線計算出中文趨勢
+            # 趨勢格局
             if close_px > ma5 > ma20 > ma60:
-                trend_status = "🔥 多頭排列 (趨勢極強)" 
+                trend_status = "🔥 多頭排列 (強勢)" 
             elif close_px < ma5 < ma20 < ma60:
-                trend_status = "🧊 空頭排列 (趨勢極弱)" 
+                trend_status = "🧊 空頭排列 (極弱)" 
             elif close_px > ma60:
-                trend_status = "🔼 站上季線 (波段偏多)" 
+                trend_status = "🔼 站上季線 (偏多)" 
             else:
-                trend_status = "🔽 跌破季線 (波段偏空)" 
+                trend_status = "🔽 跌破季線 (偏空)" 
 
-            # 量價與背離判斷
+            # 🔥 修正後的量價與背離判斷 (不會再動不動就叫你跑了)
             if px_up and vol_up:
                 status = "價漲量增"
-                note = "🟢 燃料充足，可續抱或觀察"
+                note = "🟢 燃料充足，強勢格局可續抱！"
             elif px_up and not vol_up:
-                status = "價漲量縮 (頂背離)"
-                note = "⚠️ 追價力道弱，注意獲利了結"
+                status = "價漲量平/縮"
+                note = "🟡 穩步墊高，持股續抱，空手勿追"
             elif not px_up and vol_up:
                 status = "價跌量增"
-                note = "🚨 賣壓沉重，請避開勿接刀"
+                note = "🚨 賣壓沉重，跌破月線請停損"
             else:
                 status = "價跌量縮"
-                note = "⚪ 賣壓減輕，可觀察築底"
+                note = "⚪ 量縮回檔，觀察季線支撐"
                 
-            if bias > 10:
-                note = "🔥 乖離率過大，極度危險勿追高！"
+            # 乖離率門檻從 10% 提高到 20%，真正過熱才會覆蓋警告
+            if bias > 20:
+                note = "🔥 乖離率>20%，短線過熱，適度獲利了結"
                 
-            # 這裡把 5MA、20MA、60MA 的數字欄位拿掉了！只留下看得懂的中文
             results.append({
                 "代號": ticker.replace(".TW", ""), 
                 "名稱": name,
@@ -164,4 +163,4 @@ else:
     st.info("目前您選擇的產業中，沒有符合預算且具備流動性的標的。您可以嘗試放寬「最高價位」或勾選更多產業。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已自動依據均線與量價進行背景運算。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+st.caption("📝 說明：系統已自動依據均線與量價進行背景運算。短線過熱(乖離率>20%)將發出防追高警示。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
