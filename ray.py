@@ -67,10 +67,9 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 (加入快取與自動決策邏輯) ---
-@st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁請求 Yahoo 導致變慢
+# --- 🧠 3. 核心運算引擎 (🔥加入 5, 20, 60 均線自動檢測🔥) ---
+@st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit):
-    # 組合要查詢的代號與名稱字典
     tickers_to_fetch = {}
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat])
@@ -82,29 +81,37 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
     for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
-            # 抓取近 1 個月資料來算 20日線 (月線) 與均量
-            hist = tk.history(period="1mo")
-            if hist.empty or len(hist) < 20: continue
+            # ⚠️ 這裡必須改成 "6mo"，才夠算 60日均線(季線)
+            hist = tk.history(period="6mo")
+            if hist.empty or len(hist) < 60: continue
             
             close_px = hist['Close'].iloc[-1]
-            
-            # ⛔ 價格過濾器 (大於設定價位直接略過)
             if close_px > price_limit: continue
             
             prev_px = hist['Close'].iloc[-2]
-            vol = hist['Volume'].iloc[-1] / 1000  # 轉成張數
-            
-            # ⛔ 流動性過濾器 (成交量太小的殭屍股直接略過)
+            vol = hist['Volume'].iloc[-1] / 1000  
             if vol < 1000 and target_type == "個股": continue 
 
+            # --- 📈 均線與技術計算 ---
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
-            ma20 = hist['Close'].tail(20).mean()
+            ma5 = hist['Close'].tail(5).mean()    # 5日線 (周)
+            ma20 = hist['Close'].tail(20).mean()  # 20日線 (月)
+            ma60 = hist['Close'].tail(60).mean()  # 60日線 (季)
             
-            # --- 數學運算 ---
-            bias = ((close_px - ma20) / ma20) * 100  # 乖離率
-            px_up = close_px > prev_px               # 價漲
-            vol_up = vol > vol_5ma                   # 量增 (大於5日均量)
+            bias = ((close_px - ma20) / ma20) * 100  
+            px_up = close_px > prev_px               
+            vol_up = vol > vol_5ma                   
             
+            # --- 🎯 均線趨勢自動判定 ---
+            if close_px > ma5 > ma20 > ma60:
+                trend_status = "🔥 多頭排列 (極強)"
+            elif close_px < ma5 < ma20 < ma60:
+                trend_status = "🧊 空頭排列 (極弱)"
+            elif close_px > ma60:
+                trend_status = "🔼 站上季線 (偏多)"
+            else:
+                trend_status = "🔽 跌破季線 (偏空)"
+
             # --- 🤖 自動決策備註邏輯 ---
             if px_up and vol_up:
                 status = "價漲量增"
@@ -119,17 +126,19 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
                 status = "價跌量縮"
                 note = "⚪ 賣壓減輕，可觀察築底"
                 
-            # 乖離率防護機制 (覆蓋原本建議)
             if bias > 10:
                 note = "🔥 乖離率過大，極度危險勿追高！"
                 
             results.append({
                 "代號": ticker.replace(".TW", ""),
-                "名稱": name,  # 🔥 這裡把中文名字加進來了！
+                "名稱": name,
                 "現價": round(close_px, 2),
+                "5MA": round(ma5, 2),
+                "20MA": round(ma20, 2),
+                "60MA": round(ma60, 2),
+                "均線格局": trend_status,  # 🔥 新增的趨勢判定
                 "成交量(張)": int(vol),
                 "狀態": status,
-                "乖離率(%)": round(bias, 2),
                 "🤖 系統建議": note
             })
         except:
@@ -137,7 +146,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # 只取成交量最大的前 5 名
         # 取消前5名限制，全數顯示並依成交量排序
         df = df.sort_values(by="成交量(張)", ascending=False)
     return df
