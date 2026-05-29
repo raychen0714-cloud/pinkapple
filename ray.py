@@ -138,7 +138,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit):
     df = pd.DataFrame(results)
     if not df.empty:
         # 只取成交量最大的前 5 名
-        df = df.sort_values(by="成交量(張)", ascending=False).head(5)
+        # 取消前5名限制，全數顯示並依成交量排序
+        df = df.sort_values(by="成交量(張)", ascending=False)
     return df
 
 # --- 📊 4. 畫面渲染 ---
