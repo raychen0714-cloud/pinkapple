@@ -118,4 +118,60 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
                 status = "追蹤指數"
                 if trend_status == "🔥 多頭排列 (強勢)":
                     note = "🟢 長線多頭，適合定期定額續抱"
-                elif trend_status == "🔼 站上季線
+                elif trend_status == "🔼 站上季線 (偏多)":
+                    note = "🟡 穩步墊高，逢回踩月線可加碼"
+                elif trend_status == "🔽 跌破季線 (偏空)":
+                    note = "⚠️ 跌破生命線，建議暫停加碼觀察"
+                else:
+                    note = "🚨 空頭探底，請勿輕易攤平接刀"
+            else:
+                if px_up and vol_up:
+                    status = "價漲量增"
+                    note = "🟢 燃料充足，強勢格局可續抱！"
+                elif px_up and not vol_up:
+                    status = "價漲量縮 (頂背離)"
+                    note = "🟡 量能未跟上，持股續抱，空手勿追"
+                elif not px_up and vol_up:
+                    status = "價跌量增"
+                    note = "🚨 賣壓沉重，跌破月線請停損"
+                else:
+                    status = "價跌量縮"
+                    note = "⚪ 量縮回檔，觀察季線支撐"
+                
+            if bias > 20:
+                note = "🔥 乖離率>20%，短線極度過熱，請獲利了結"
+                
+            results.append({
+                "代號": ticker.replace(".TW", ""), 
+                "名稱": name,
+                "現價": round(close_px, 2), 
+                "成交量(張)": int(vol),
+                "趨勢格局": trend_status,  
+                "量價型態": status,
+                "🤖 系統建議": note
+            })
+        except:
+            continue
+            
+    df = pd.DataFrame(results)
+    
+    if not df.empty:
+        df = df.sort_values(by="成交量(張)", ascending=False)
+        
+    return df 
+
+# --- 📊 4. 畫面渲染 ---
+st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
+
+with st.spinner("系統正在進行背景運算與過濾，請稍候..."):
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
+
+if not final_data.empty:
+    if target_type == "ETF":
+        final_data = final_data.drop(columns=["量價型態"])
+    st.dataframe(final_data, use_container_width=True, hide_index=True)
+else:
+    st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
+
+st.markdown("---")
+st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 偵測長線存股趨勢。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
