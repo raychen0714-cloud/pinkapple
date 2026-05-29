@@ -7,7 +7,7 @@ st.set_page_config(page_title="PRO 戰情室", layout="wide")
 st.title("🚀 PRO 級自動化決策戰情室")
 st.markdown("---")
 
-# --- 📂 1. 定義標的池 (🔥 超級擴充版大水庫 🔥) ---
+# --- 📂 1. 定義標的池 (超級擴充版大水庫) ---
 STOCK_UNIVERSE = {
     "半導體": {
         "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
@@ -67,37 +67,101 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
 
-# --- 🧠 3. 核心運算引擎 (全中文註解 + 均線偵測 + 無名次限制) ---
+# --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit):
     
-    # 建立一個空的籃子，用來裝你剛剛在左邊勾選的那些股票
     tickers_to_fetch = {}
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat])
     
-    # 如果籃子是空的，就直接結束
     if not tickers_to_fetch:
         return pd.DataFrame()
 
-    results = [] # 準備一個大表格存放結果
+    results = [] 
     
-    # 開始一檔一檔算
     for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
-            # 抓取過去 6 個月 (6mo) 的歷史資料，算季線必須抓 6 個月
             hist = tk.history(period="6mo")
             
             if hist.empty or len(hist) < 60: continue
             
             close_px = hist['Close'].iloc[-1]
             
-            # ⛔ 價格安檢門
             if close_px > price_limit: continue
             
             prev_px = hist['Close'].iloc[-2]
             vol = hist['Volume'].iloc[-1] / 1000  
             
-            # ⛔ 流動性安檢門：成交量不到 1000 張跳過
-            if
+            if vol < 1000 and target_type == "個股": continue 
+
+            vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
+            ma5 = hist['Close'].tail(5).mean()    
+            ma20 = hist['Close'].tail(20).mean()  
+            ma60 = hist['Close'].tail(60).mean()  
+            
+            bias = ((close_px - ma20) / ma20) * 100  
+            px_up = close_px > prev_px               
+            vol_up = vol > vol_5ma                   
+            
+            if close_px > ma5 > ma20 > ma60:
+                trend_status = "🔥 多頭排列 (極強)" 
+            elif close_px < ma5 < ma20 < ma60:
+                trend_status = "🧊 空頭排列 (極弱)" 
+            elif close_px > ma60:
+                trend_status = "🔼 站上季線 (偏多)" 
+            else:
+                trend_status = "🔽 跌破季線 (偏空)" 
+
+            if px_up and vol_up:
+                status = "價漲量增"
+                note = "🟢 燃料充足，可續抱或觀察"
+            elif px_up and not vol_up:
+                status = "價漲量縮 (頂背離)"
+                note = "⚠️ 追價力道弱，注意獲利了結"
+            elif not px_up and vol_up:
+                status = "價跌量增"
+                note = "🚨 賣壓沉重，請避開勿接刀"
+            else:
+                status = "價跌量縮"
+                note = "⚪ 賣壓減輕，可觀察築底"
+                
+            if bias > 10:
+                note = "🔥 乖離率過大，極度危險勿追高！"
+                
+            results.append({
+                "代號": ticker.replace(".TW", ""), 
+                "名稱": name,
+                "現價": round(close_px, 2), 
+                "5MA": round(ma5, 2),
+                "20MA": round(ma20, 2),
+                "60MA": round(ma60, 2),
+                "均線格局": trend_status,  
+                "成交量(張)": int(vol),
+                "狀態": status,
+                "🤖 系統建議": note
+            })
+        except:
+            continue
+            
+    df = pd.DataFrame(results)
+    
+    if not df.empty:
+        df = df.sort_values(by="成交量(張)", ascending=False)
+        
+    return df 
+
+# --- 📊 4. 畫面渲染 ---
+st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
+
+with st.spinner("系統正在進行量價分析與背離過濾，請稍候..."):
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price)
+
+if not final_data.empty:
+    st.dataframe(final_data, use_container_width=True, hide_index=True)
+else:
+    st.info("目前您選擇的產業中，沒有符合預算且具備流動性的標的。您可以嘗試放寬「最高價位」或勾選更多產業。")
+
+st.markdown("---")
+st.caption("📝 說明：系統已自動過濾流動性不足之標的。乖離率 > 10% 系統將自動發出防追高警示。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
