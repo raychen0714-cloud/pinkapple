@@ -115,30 +115,26 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            # --- 溫和的決策引擎 ---
+            # --- 改良後的寬鬆決策引擎 ---
             if current_type == "ETF":
-                status = "存股觀察"
-                if trend_status == "🔥 多頭排列 (趨勢走強)":
-                    note = "🟢 長線趨勢佳，適合定期定額持有"
-                elif trend_status == "🔼 站上季線 (波段看多)":
-                    note = "🟡 穩步墊高，逢回踩月線可留意加碼"
-                elif trend_status == "🔽 跌破季線 (波段防守)":
-                    note = "⚪ 跌破均線支撐，建議暫緩加碼多觀察"
+                # ETF 只要趨勢對了就亮綠燈
+                if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
+                    status = "趨勢向上"
+                    note = "🟢 趨勢向上，適合分批布局"
                 else:
-                    note = "⚪ 目前處於弱勢整理，建議多看少做"
+                    status = "整理中"
+                    note = "⚪ 進入整理，建議保持觀望"
             else:
-                if px_up and vol_up:
-                    status = "價漲量增"
-                    note = "🟢 動能充足，維持強勢格局可續抱"
-                elif px_up and not vol_up:
-                    status = "價漲量縮"
-                    note = "🟡 穩步墊高，持股續抱，空手宜觀望"
-                elif not px_up and vol_up:
-                    status = "價跌量增"
-                    note = "🟠 短線賣壓湧現，請留意月線防守"
+                # 個股只要價格在漲，且趨勢向上，就亮綠燈
+                if px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
+                    status = "趨勢向上"
+                    note = "🟢 趨勢強勢，可積極關注布局"
+                elif px_up:
+                    status = "緩步墊高"
+                    note = "🟡 溫和上漲，可續抱，不宜追高"
                 else:
-                    status = "價跌量縮"
-                    note = "⚪ 量縮回檔，可觀察季線支撐力道"
+                    status = "整理中"
+                    note = "⚪ 量縮回檔，觀察支撐是否有效"
                 
             # 乖離率過大防護 (語氣放緩)
             if bias > 20:
