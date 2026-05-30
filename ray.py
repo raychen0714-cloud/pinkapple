@@ -68,7 +68,7 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
-# --- 🧠 3. 核心運算引擎 (防呆與寬鬆升級) ---
+# --- 🧠 3. 核心運算引擎 (加入大戶爆量雷達) ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
     
@@ -86,7 +86,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             tk = yf.Ticker(ticker)
             hist = tk.history(period="6mo")
             
-            # 🔥 週末防呆：剔除沒有價格跟成交量的無效資料 (解決 None 導致的白燈)
+            # 週末防呆：剔除沒有價格跟成交量的無效資料
             hist = hist.dropna(subset=['Close', 'Volume'])
             
             if hist.empty or len(hist) < 60: continue
@@ -106,7 +106,11 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             
             bias = ((close_px - ma20) / ma20) * 100  
             px_up = close_px > prev_px               
-            vol_up = vol > vol_5ma                   
+            
+            # 判斷成交量是否為 5日均量的 2 倍以上 (大戶雷達核心邏輯)
+            vol_surge = False
+            if vol_5ma > 0 and (vol / vol_5ma) >= 2.0:
+                vol_surge = True
             
             if close_px > ma5 > ma20 > ma60:
                 trend_status = "🔥 多頭排列 (強勢)" 
@@ -117,9 +121,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            # --- 寬鬆版決策邏輯 ---
+            # --- 包含大戶雷達的決策邏輯 ---
             if current_type == "ETF":
-                # ETF 只要趨勢向上，就大膽亮綠燈
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
                     note = "🟢 趨勢向上，適合分批布局"
@@ -127,8 +130,15 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
                     status = "整理中"
                     note = "⚪ 進入整理，建議保持觀望"
             else:
-                # 個股如果趨勢好且價格在漲，就亮綠燈
-                if px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
+                # 優先判定大戶進出 (爆量 2 倍)
+                if vol_surge and px_up:
+                    status = "💥 爆量起漲"
+                    note = "🐋 疑似大戶進場，強勢表態可跟進！"
+                elif vol_surge and not px_up:
+                    status = "⚠️ 爆量下殺"
+                    note = "🚨 疑似大戶倒貨，請嚴格控管風險！"
+                # 再回到一般溫和判定
+                elif px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "強勢表態"
                     note = "🟢 趨勢強勢，可積極關注布局"
                 elif px_up:
@@ -174,4 +184,4 @@ else:
     st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
 
 st.markdown("---")
-st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 偵測長線存股趨勢。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+st.caption("📝 說明：系統已加入【大戶爆量雷達】，成交量達均量 2 倍即發出提示。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
