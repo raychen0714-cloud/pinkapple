@@ -7,7 +7,7 @@ st.set_page_config(page_title="PRO 戰情室", layout="wide")
 st.title("🚀 PRO 級自動化決策戰情室")
 st.markdown("---")
 
-# --- 📂 1. 定義標的池 (超級擴充版大水庫 - 新增6147等標的) ---
+# --- 📂 1. 定義標的池 (擴充版水庫 - 包含 6147 頎邦與熱門 ETF) ---
 STOCK_UNIVERSE = {
     "半導體": {
         "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
@@ -66,9 +66,9 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=50, step=5)
+max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
-# --- 🧠 3. 核心運算引擎 (雙引擎架構：個股看量價，ETF看趨勢) ---
+# --- 🧠 3. 核心運算引擎 (情緒穩定版雙引擎) ---
 @st.cache_data(ttl=300) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
     
@@ -105,41 +105,44 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             px_up = close_px > prev_px               
             vol_up = vol > vol_5ma                   
             
+            # --- 溫和的均線格局判定 ---
             if close_px > ma5 > ma20 > ma60:
-                trend_status = "🔥 多頭排列 (強勢)" 
+                trend_status = "🔥 多頭排列 (趨勢走強)" 
             elif close_px < ma5 < ma20 < ma60:
-                trend_status = "🧊 空頭排列 (極弱)" 
+                trend_status = "🧊 空頭排列 (趨勢偏弱)" 
             elif close_px > ma60:
-                trend_status = "🔼 站上季線 (偏多)" 
+                trend_status = "🔼 站上季線 (波段看多)" 
             else:
-                trend_status = "🔽 跌破季線 (偏空)" 
+                trend_status = "🔽 跌破季線 (波段防守)" 
 
+            # --- 溫和的決策引擎 ---
             if current_type == "ETF":
-                status = "追蹤指數"
-                if trend_status == "🔥 多頭排列 (強勢)":
-                    note = "🟢 長線多頭，適合定期定額續抱"
-                elif trend_status == "🔼 站上季線 (偏多)":
-                    note = "🟡 穩步墊高，逢回踩月線可加碼"
-                elif trend_status == "🔽 跌破季線 (偏空)":
-                    note = "⚠️ 跌破生命線，建議暫停加碼觀察"
+                status = "存股觀察"
+                if trend_status == "🔥 多頭排列 (趨勢走強)":
+                    note = "🟢 長線趨勢佳，適合定期定額持有"
+                elif trend_status == "🔼 站上季線 (波段看多)":
+                    note = "🟡 穩步墊高，逢回踩月線可留意加碼"
+                elif trend_status == "🔽 跌破季線 (波段防守)":
+                    note = "⚪ 跌破均線支撐，建議暫緩加碼多觀察"
                 else:
-                    note = "🚨 空頭探底，請勿輕易攤平接刀"
+                    note = "⚪ 目前處於弱勢整理，建議多看少做"
             else:
                 if px_up and vol_up:
                     status = "價漲量增"
-                    note = "🟢 燃料充足，強勢格局可續抱！"
+                    note = "🟢 動能充足，維持強勢格局可續抱"
                 elif px_up and not vol_up:
-                    status = "價漲量縮 (頂背離)"
-                    note = "🟡 量能未跟上，持股續抱，空手勿追"
+                    status = "價漲量縮"
+                    note = "🟡 穩步墊高，持股續抱，空手宜觀望"
                 elif not px_up and vol_up:
                     status = "價跌量增"
-                    note = "🚨 賣壓沉重，跌破月線請停損"
+                    note = "🟠 短線賣壓湧現，請留意月線防守"
                 else:
                     status = "價跌量縮"
-                    note = "⚪ 量縮回檔，觀察季線支撐"
+                    note = "⚪ 量縮回檔，可觀察季線支撐力道"
                 
+            # 乖離率過大防護 (語氣放緩)
             if bias > 20:
-                note = "🔥 乖離率>20%，短線極度過熱，請獲利了結"
+                note = "🔥 短線漲幅較大 (乖離>20%)，可適度留意停利點"
                 
             results.append({
                 "代號": ticker.replace(".TW", ""), 
@@ -163,7 +166,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
 # --- 📊 4. 畫面渲染 ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("系統正在進行背景運算與過濾，請稍候..."):
+with st.spinner("系統正在讀取最新數據，請稍候..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
 
 if not final_data.empty:
@@ -171,7 +174,7 @@ if not final_data.empty:
         final_data = final_data.drop(columns=["量價型態"])
     st.dataframe(final_data, use_container_width=True, hide_index=True)
 else:
-    st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
+    st.info("目前您選擇的板塊中，沒有符合預算的標的。您可以放寬「最高價位」或勾選更多產業。")
 
 st.markdown("---")
-st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 偵測長線存股趨勢。資料來源為 Yahoo Finance，自動每 5 分鐘快取更新。")
+st.caption("📝 說明：系統具備雙引擎判斷。個股偵測量價動能，ETF 專注長線存股趨勢。短線漲幅過大將溫和提示。資料自動快取更新。")
