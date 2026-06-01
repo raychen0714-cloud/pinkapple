@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="戰情室", layout="wide")
@@ -67,29 +68,39 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="懶得打00也行, 如: 878, 56, 2330")
+# 手動輸入框
+manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="如: 878, 56, 2330")
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input):
-    
     tickers_to_fetch = {}
+    
+    # 先載入勾選的預設標的
     for cat in categories:
-        tickers_to_fetch.update(universe_dict[cat])
+        tickers_to_fetch.update(universe_dict[cat].copy())
         
+    # 建立手動名單與智慧補零機制
     manual_symbols = []
     if manual_input:
         raw_tickers = [t.strip().upper() for t in manual_input.split(",") if t.strip()]
         for t in raw_tickers:
-            # 🔥 智慧代碼校正：如果你偷懶只打 878 或 56，系統自動幫你補齊前面的 00
+            # 自動補零
             if len(t) <= 3 and t.isdigit():
                 t = f"00{t}"
-            # 針對槓桿 ETF 偷懶打法 (如 632R 自動變 00632R)
             elif len(t) == 4 and (t.endswith('R') or t.endswith('L')) and t[0] != '0':
                 t = f"00{t}"
                 
             t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
-            tickers_to_fetch[t_symbol] = "自選標的"
+            
+            # 檢查預設清單有沒有名稱，沒有就用「自選標的」
+            display_name = "自選標的"
+            for cat_key, stocks in STOCK_UNIVERSE.items():
+                if t_symbol in stocks: display_name = stocks[t_symbol]
+            for cat_key, etfs in ETF_UNIVERSE.items():
+                if t_symbol in etfs: display_name = etfs[t_symbol]
+                
+            tickers_to_fetch[t_symbol] = display_name
             manual_symbols.append(t_symbol)
     
     if not tickers_to_fetch:
@@ -99,44 +110,43 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     
     for ticker, name in tickers_to_fetch.items():
         try:
+            is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
-            is_manual = (ticker in manual_symbols) 
             
-            # 手動輸入去抓真實中文名字
-            if name == "自選標的":
-                try:
-                    name = tk.info.get("shortName", "自選標的")
-                except:
-                    pass
-
+            # 抓取歷史半年數據
             hist = tk.history(period="6mo", auto_adjust=False)
-            hist = hist.dropna(subset=['Close', 'Volume'])
+            if hist.empty: continue
             
-            if hist.empty or len(hist) < 60: continue
+            # 徹底清洗假日造成的空值
+            hist = hist.replace([np.inf, -np.inf], np.nan).dropna(subset=['Close', 'Volume'])
+            if len(hist) < 60: continue
             
+            # 優先獲取真實收盤價
             try:
                 close_px = float(tk.fast_info.last_price)
+                if np.isnan(close_px) or close_px <= 0:
+                    close_px = float(hist['Close'].iloc[-1])
             except:
                 close_px = float(hist['Close'].iloc[-1])
                 
+            # 🔥 特權 1：手動輸入標的無視最高價格限制
             if not is_manual and close_px > price_limit: continue
             
-            prev_px = hist['Close'].iloc[-2]
-            vol = hist['Volume'].iloc[-1] / 1000  
+            prev_px = float(hist['Close'].iloc[-2])
+            vol = float(hist['Volume'].iloc[-1]) / 1000  
             
+            # 🔥 特權 2：手動輸入標的無視量小過濾限制
             if not is_manual and vol < 1000 and current_type == "個股": continue 
 
-            vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
-            ma5 = hist['Close'].tail(5).mean()    
-            ma20 = hist['Close'].tail(20).mean()  
-            ma60 = hist['Close'].tail(60).mean()  
+            vol_5ma = float(hist['Volume'].tail(5).mean()) / 1000
+            ma5 = float(hist['Close'].tail(5).mean())    
+            ma20 = float(hist['Close'].tail(20).mean())  
+            ma60 = float(hist['Close'].tail(60).mean())  
             
             bias = ((close_px - ma20) / ma20) * 100  
             px_up = close_px > prev_px               
             
-            vol_surge = False
-            if vol_5ma > 0 and (vol / vol_5ma) >= 2.0:
-                vol_surge = True
+            vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
             if close_px > ma5 > ma20 > ma60:
                 trend_status = "🔥 多頭排列 (強勢)" 
@@ -147,7 +157,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            if current_type == "ETF" or (is_manual and ticker.startswith("00")):
+            # 決策引擎 (手動輸入若為00開頭自動走精確存股策略)
+            if current_type == "ETF" or (is_manual and ticker.replace(".TW","").startswith("00")):
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
                     note = "🟢 趨勢向上，適合分批布局"
@@ -175,7 +186,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 note = "🔥 乖離率過高，短線過熱留意停利"
                 
             results.append({
-                "代號": ticker.replace(".TW", ""), 
+                "代號": ticker.replace(".TW", "").replace(".TWO",""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
@@ -186,16 +197,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             continue
             
     df = pd.DataFrame(results)
-    
     if not df.empty:
         df = df.sort_values(by="成交量(張)", ascending=False)
-        
     return df 
 
 # --- 📊 4. 畫面渲染 ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("即時數據載入中，請稍候..."):
+with st.spinner("真實證券報價同步中..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str)
 
 if not final_data.empty:
@@ -215,7 +224,4 @@ if not final_data.empty:
         }
     )
 else:
-    st.info("目前沒有符合預算的標的，或手動輸入的標的查無資料。")
-
-st.markdown("---")
-st.caption("📝 說明：手動新增標的具備最高顯示特權，並內建【AI 智慧校正】，輸入 878 自動補齊 00878。")
+    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
