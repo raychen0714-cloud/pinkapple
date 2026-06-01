@@ -168,7 +168,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         
     return df 
 
-# --- 📊 4. 畫面渲染 (防切字 + 自動換行優化) ---
+# --- 📊 4. 畫面渲染 (Gemini 的極致排版) ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("即時數據載入中，請稍候..."):
@@ -178,22 +178,21 @@ if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
     
-    # 💡 終極優化：開啟 use_container_width，但利用 column_config 允許文字換行
+    # 🔥 終極優化：關閉強制拉伸，並透過 column_config 讓建議欄位有足夠空間但不留白
     st.dataframe(
         display_df,
         hide_index=True,
-        use_container_width=True, # 允許寬度自動拉伸
+        use_container_width=False, # 絕對不允許表格擅自撐滿螢幕
         column_config={
-            "標的": st.column_config.TextColumn("標的", width="small"),
-            "現價": st.column_config.NumberColumn("現價", width="small"),
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
-            # 🔥 絕招：這兩欄不鎖死寬度，並開啟自動換行，文字保證不被切
-            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議", width=None),
-            "趨勢格局": st.column_config.TextColumn("趨勢格局", width=None)
+            "標的": st.column_config.TextColumn("標的"),
+            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議", width="large"), # 給予剛好的最大寬度，防切字且不留白
+            "現價": st.column_config.NumberColumn("現價"),
+            "成交量(張)": st.column_config.NumberColumn("成交量"),
+            "趨勢格局": st.column_config.TextColumn("趨勢格局")
         }
     )
 else:
     st.info("目前沒有符合預算的標的。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已升級【智慧防切字 UI】，較長文字欄位將自動適應螢幕並換行完整顯示。")
+st.caption("📝 說明：系統已採用緊湊型 UI 設計，優化文字顯示與版面空白問題。")
