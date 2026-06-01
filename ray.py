@@ -174,18 +174,30 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         
     return df 
 
-# --- 📊 4. 畫面渲染 ---
+# ... (前面的定義維持不變，直接從渲染欄位邏輯開始)
+
+# --- 📊 4. 畫面渲染 (針對手機優化版) ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("啟動證券即時報價引擎 (30秒防禦更新)，連線中..."):
+with st.spinner("啟動手機優化報價引擎..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
 
 if not final_data.empty:
+    # 🔥 優化策略：合併欄位讓手機版不用滑
+    # 將代號與名稱合併，這樣可以騰出很多空間
+    final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
+    
+    # 重新排列順序，確保最重要的欄位先出現
     if target_type == "ETF":
-        final_data = final_data.drop(columns=["量價型態"])
-    st.dataframe(final_data, use_container_width=True, hide_index=True)
+        # ETF 手機版順序：標的 -> 系統建議 -> 現價 -> 成交量
+        display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
+    else:
+        # 個股手機版順序：標的 -> 系統建議 -> 現價 -> 成交量
+        display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
+        
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 else:
-    st.info("目前您選擇的產業中，沒有符合預算的標的。您可以嘗試放寬「最高價位」或勾選更多分類。")
+    st.info("目前沒有符合預算的標的。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已啟用【證券即時報價引擎】與【30秒防駭客機制】，確保高股息 ETF 報價精準。資料自動安全連線更新。")
+st.caption("📝 說明：已針對手機瀏覽進行 UI 優化，合併名稱代號並優先顯示建議欄位。")
