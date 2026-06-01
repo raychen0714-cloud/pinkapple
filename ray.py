@@ -68,7 +68,7 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
-# --- 🧠 3. 核心運算引擎 (🔥 啟用真實證券報價引擎 + 30秒防禦機制) ---
+# --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
     
@@ -85,14 +85,11 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         try:
             tk = yf.Ticker(ticker)
             
-            # 🔥 關閉 Yahoo 雞婆的自動除權息還原，確保均線計算不受干擾
             hist = tk.history(period="6mo", auto_adjust=False)
             hist = hist.dropna(subset=['Close', 'Volume'])
             
             if hist.empty or len(hist) < 60: continue
             
-            # 🔥 絕招：啟動「真實證券即時報價引擎」
-            # 直接抓取最即時的報價欄位，繞過歷史資料庫的運算誤差
             try:
                 close_px = float(tk.fast_info.last_price)
             except:
@@ -113,7 +110,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             bias = ((close_px - ma20) / ma20) * 100  
             px_up = close_px > prev_px               
             
-            # 大戶爆量雷達
             vol_surge = False
             if vol_5ma > 0 and (vol / vol_5ma) >= 2.0:
                 vol_surge = True
@@ -127,7 +123,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            # --- 決策邏輯 ---
             if current_type == "ETF":
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
@@ -141,7 +136,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
                     note = "🐋 疑似大戶進場，強勢表態可跟進！"
                 elif vol_surge and not px_up:
                     status = "⚠️ 爆量下殺"
-                    note = "🚨 疑似大戶倒貨，請嚴格控管風險！"
+                    note = "🚨 疑似大戶倒貨，嚴格控管風險！"
                 elif px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "強勢表態"
                     note = "🟢 趨勢強勢，可積極關注布局"
@@ -153,7 +148,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
                     note = "⚪ 量縮回檔，觀察支撐是否有效"
                 
             if bias > 20:
-                note = "🔥 乖離率>20%，短線極度過熱，請獲利了結"
+                note = "🔥 乖離率過高，短線過熱留意停利"
                 
             results.append({
                 "代號": ticker.replace(".TW", ""), 
@@ -161,7 +156,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "量價型態": status,
                 "🤖 系統建議": note
             })
         except:
@@ -174,30 +168,34 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         
     return df 
 
-# ... (前面的定義維持不變，直接從渲染欄位邏輯開始)
-
-# --- 📊 4. 畫面渲染 (針對手機優化版) ---
+# --- 📊 4. 畫面渲染 (極致縮排優化版) ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("啟動手機優化報價引擎..."):
+with st.spinner("啟動證券即時報價引擎 (30秒防禦更新)，連線中..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
 
 if not final_data.empty:
-    # 🔥 優化策略：合併欄位讓手機版不用滑
-    # 將代號與名稱合併，這樣可以騰出很多空間
+    # 💡 絕招 1：合併名稱與代號，徹底省下一個欄位的空間
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 重新排列順序，確保最重要的欄位先出現
-    if target_type == "ETF":
-        # ETF 手機版順序：標的 -> 系統建議 -> 現價 -> 成交量
-        display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
-    else:
-        # 個股手機版順序：標的 -> 系統建議 -> 現價 -> 成交量
-        display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
-        
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    # 重新排列順序，讓最重要的放前面
+    display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
+    
+    # 💡 絕招 2：利用 column_config 強制縮緊每一個欄位
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        use_container_width=False, # 關閉強制填滿螢幕，讓表格貼合文字大小
+        column_config={
+            "標的": st.column_config.TextColumn("標的", width="small"),
+            "現價": st.column_config.NumberColumn("現價", width="small"),
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
+            "趨勢格局": st.column_config.TextColumn("趨勢格局", width="small"),
+            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議", width="medium") # 建議欄位給 medium 避免字擠到換行
+        }
+    )
 else:
     st.info("目前沒有符合預算的標的。")
 
 st.markdown("---")
-st.caption("📝 說明：已針對手機瀏覽進行 UI 優化，合併名稱代號並優先顯示建議欄位。")
+st.caption("📝 說明：系統已啟用【極致縮排 UI】，確保手機瀏覽版面緊湊不留白。")
