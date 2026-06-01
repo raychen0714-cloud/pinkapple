@@ -68,7 +68,6 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-# 手動輸入框
 manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="如: 878, 56, 2330")
 
 # --- 🧠 3. 核心運算引擎 ---
@@ -76,16 +75,16 @@ manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", p
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input):
     tickers_to_fetch = {}
     
-    # 先載入勾選的預設標的
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat].copy())
         
-    # 建立手動名單與智慧補零機制
     manual_symbols = []
     if manual_input:
-        raw_tickers = [t.strip().upper() for t in manual_input.split(",") if t.strip()]
+        # 🔥 萬能標點符號破解：把全形逗號、頓號、空白全部換成標準逗號
+        clean_input = manual_input.replace("，", ",").replace("、", ",").replace(" ", ",")
+        raw_tickers = [t.strip().upper() for t in clean_input.split(",") if t.strip()]
+        
         for t in raw_tickers:
-            # 自動補零
             if len(t) <= 3 and t.isdigit():
                 t = f"00{t}"
             elif len(t) == 4 and (t.endswith('R') or t.endswith('L')) and t[0] != '0':
@@ -93,7 +92,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
             
-            # 檢查預設清單有沒有名稱，沒有就用「自選標的」
             display_name = "自選標的"
             for cat_key, stocks in STOCK_UNIVERSE.items():
                 if t_symbol in stocks: display_name = stocks[t_symbol]
@@ -113,15 +111,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            # 抓取歷史半年數據
             hist = tk.history(period="6mo", auto_adjust=False)
             if hist.empty: continue
             
-            # 徹底清洗假日造成的空值
             hist = hist.replace([np.inf, -np.inf], np.nan).dropna(subset=['Close', 'Volume'])
             if len(hist) < 60: continue
             
-            # 優先獲取真實收盤價
             try:
                 close_px = float(tk.fast_info.last_price)
                 if np.isnan(close_px) or close_px <= 0:
@@ -129,13 +124,11 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             except:
                 close_px = float(hist['Close'].iloc[-1])
                 
-            # 🔥 特權 1：手動輸入標的無視最高價格限制
             if not is_manual and close_px > price_limit: continue
             
             prev_px = float(hist['Close'].iloc[-2])
             vol = float(hist['Volume'].iloc[-1]) / 1000  
             
-            # 🔥 特權 2：手動輸入標的無視量小過濾限制
             if not is_manual and vol < 1000 and current_type == "個股": continue 
 
             vol_5ma = float(hist['Volume'].tail(5).mean()) / 1000
@@ -157,7 +150,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            # 決策引擎 (手動輸入若為00開頭自動走精確存股策略)
             if current_type == "ETF" or (is_manual and ticker.replace(".TW","").startswith("00")):
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
@@ -186,6 +178,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 note = "🔥 乖離率過高，短線過熱留意停利"
                 
             results.append({
+                "is_manual": is_manual, # 🔥 隱藏的 VIP 排序標籤
                 "代號": ticker.replace(".TW", "").replace(".TWO",""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
@@ -198,7 +191,10 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             
     df = pd.DataFrame(results)
     if not df.empty:
-        df = df.sort_values(by="成交量(張)", ascending=False)
+        # 🔥 VIP 置頂邏輯：先排「是不是手動輸入（True放前面）」，再來才排「成交量」
+        df = df.sort_values(by=["is_manual", "成交量(張)"], ascending=[False, False])
+        # 顯示前把隱藏標籤丟掉，保持畫面乾淨
+        df = df.drop(columns=["is_manual"])
     return df 
 
 # --- 📊 4. 畫面渲染 ---
