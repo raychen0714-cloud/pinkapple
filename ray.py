@@ -67,7 +67,7 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="多檔請用逗號分隔，如: 0056, 2330")
+manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="懶得打00也行, 如: 878, 56, 2330")
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
@@ -77,11 +77,17 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat])
         
-    # 🔥 記錄手動輸入的清單，給予「最高特權」
     manual_symbols = []
     if manual_input:
-        raw_tickers = [t.strip() for t in manual_input.split(",") if t.strip()]
+        raw_tickers = [t.strip().upper() for t in manual_input.split(",") if t.strip()]
         for t in raw_tickers:
+            # 🔥 智慧代碼校正：如果你偷懶只打 878 或 56，系統自動幫你補齊前面的 00
+            if len(t) <= 3 and t.isdigit():
+                t = f"00{t}"
+            # 針對槓桿 ETF 偷懶打法 (如 632R 自動變 00632R)
+            elif len(t) == 4 and (t.endswith('R') or t.endswith('L')) and t[0] != '0':
+                t = f"00{t}"
+                
             t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
             tickers_to_fetch[t_symbol] = "自選標的"
             manual_symbols.append(t_symbol)
@@ -94,8 +100,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
-            is_manual = (ticker in manual_symbols) # 判斷是否擁有特權
+            is_manual = (ticker in manual_symbols) 
             
+            # 手動輸入去抓真實中文名字
             if name == "自選標的":
                 try:
                     name = tk.info.get("shortName", "自選標的")
@@ -112,13 +119,11 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             except:
                 close_px = float(hist['Close'].iloc[-1])
                 
-            # 🔥 特權 1：手動輸入的標的，無視「最高價」限制！
             if not is_manual and close_px > price_limit: continue
             
             prev_px = hist['Close'].iloc[-2]
             vol = hist['Volume'].iloc[-1] / 1000  
             
-            # 🔥 特權 2：手動輸入的標的，無視「成交量」過濾！
             if not is_manual and vol < 1000 and current_type == "個股": continue 
 
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
@@ -142,7 +147,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            # 如果是 ETF (或手動輸入判斷為 ETF 代號開頭 00)，採用溫和判定
             if current_type == "ETF" or (is_manual and ticker.startswith("00")):
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
@@ -214,4 +218,4 @@ else:
     st.info("目前沒有符合預算的標的，或手動輸入的標的查無資料。")
 
 st.markdown("---")
-st.caption("📝 說明：手動新增標的具備最高顯示特權，不受價格與成交量條件過濾。")
+st.caption("📝 說明：手動新增標的具備最高顯示特權，並內建【AI 智慧校正】，輸入 878 自動補齊 00878。")
