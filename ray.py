@@ -4,7 +4,6 @@ import pandas as pd
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="戰情室", layout="wide")
-# 已移除最上方的大標題
 
 # --- 📂 1. 定義標的池 ---
 STOCK_UNIVERSE = {
@@ -67,9 +66,8 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
-# 🔥 增加手動輸入欄位
 st.sidebar.markdown("---")
-manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="多檔請用逗號分隔，如: 0056, 00927")
+manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="多檔請用逗號分隔，如: 0056, 2330")
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
@@ -79,13 +77,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat])
         
-    # 處理手動輸入的標的
+    # 🔥 記錄手動輸入的清單，給予「最高特權」
+    manual_symbols = []
     if manual_input:
         raw_tickers = [t.strip() for t in manual_input.split(",") if t.strip()]
         for t in raw_tickers:
-            # 如果使用者沒打 .TW 尾碼，自動幫他補上
-            t_symbol = f"{t}.TW" if not t.endswith(".TW") and not t.endswith(".TWO") else t
+            t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
             tickers_to_fetch[t_symbol] = "自選標的"
+            manual_symbols.append(t_symbol)
     
     if not tickers_to_fetch:
         return pd.DataFrame()
@@ -95,8 +94,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
+            is_manual = (ticker in manual_symbols) # 判斷是否擁有特權
             
-            # 如果是手動輸入的標的，嘗試從 Yahoo 抓取真正的中文或英文縮寫名稱
             if name == "自選標的":
                 try:
                     name = tk.info.get("shortName", "自選標的")
@@ -113,14 +112,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             except:
                 close_px = float(hist['Close'].iloc[-1])
                 
-            if close_px > price_limit: continue
+            # 🔥 特權 1：手動輸入的標的，無視「最高價」限制！
+            if not is_manual and close_px > price_limit: continue
             
             prev_px = hist['Close'].iloc[-2]
             vol = hist['Volume'].iloc[-1] / 1000  
             
-            # 手動輸入的標的，放寬成交量限制以免被濾掉
-            if vol < 1000 and current_type == "個股" and ticker not in manual_input: 
-                continue 
+            # 🔥 特權 2：手動輸入的標的，無視「成交量」過濾！
+            if not is_manual and vol < 1000 and current_type == "個股": continue 
 
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
             ma5 = hist['Close'].tail(5).mean()    
@@ -143,7 +142,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            if current_type == "ETF":
+            # 如果是 ETF (或手動輸入判斷為 ETF 代號開頭 00)，採用溫和判定
+            if current_type == "ETF" or (is_manual and ticker.startswith("00")):
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
                     note = "🟢 趨勢向上，適合分批布局"
@@ -192,7 +192,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("即時數據載入中，請稍候..."):
-    # 傳入 manual_tickers_str 到運算引擎中
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str)
 
 if not final_data.empty:
@@ -215,4 +214,4 @@ else:
     st.info("目前沒有符合預算的標的，或手動輸入的標的查無資料。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已採用自動貼合 UI 設計，並支援手動自選標的動態追蹤。")
+st.caption("📝 說明：手動新增標的具備最高顯示特權，不受價格與成交量條件過濾。")
