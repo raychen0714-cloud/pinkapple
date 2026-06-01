@@ -3,9 +3,8 @@ import yfinance as yf
 import pandas as pd
 
 # --- ⚙️ 頁面與效能設定 ---
-st.set_page_config(page_title="PRO 戰情室", layout="wide")
-st.title("🚀 PRO 級自動化決策戰情室")
-st.markdown("---")
+st.set_page_config(page_title="戰情室", layout="wide")
+# 已移除最上方的大標題
 
 # --- 📂 1. 定義標的池 ---
 STOCK_UNIVERSE = {
@@ -68,13 +67,25 @@ else:
 
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
+# 🔥 增加手動輸入欄位
+st.sidebar.markdown("---")
+manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="多檔請用逗號分隔，如: 0056, 00927")
+
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
-def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
+def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input):
     
     tickers_to_fetch = {}
     for cat in categories:
         tickers_to_fetch.update(universe_dict[cat])
+        
+    # 處理手動輸入的標的
+    if manual_input:
+        raw_tickers = [t.strip() for t in manual_input.split(",") if t.strip()]
+        for t in raw_tickers:
+            # 如果使用者沒打 .TW 尾碼，自動幫他補上
+            t_symbol = f"{t}.TW" if not t.endswith(".TW") and not t.endswith(".TWO") else t
+            tickers_to_fetch[t_symbol] = "自選標的"
     
     if not tickers_to_fetch:
         return pd.DataFrame()
@@ -85,6 +96,13 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         try:
             tk = yf.Ticker(ticker)
             
+            # 如果是手動輸入的標的，嘗試從 Yahoo 抓取真正的中文或英文縮寫名稱
+            if name == "自選標的":
+                try:
+                    name = tk.info.get("shortName", "自選標的")
+                except:
+                    pass
+
             hist = tk.history(period="6mo", auto_adjust=False)
             hist = hist.dropna(subset=['Close', 'Volume'])
             
@@ -100,7 +118,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
             prev_px = hist['Close'].iloc[-2]
             vol = hist['Volume'].iloc[-1] / 1000  
             
-            if vol < 1000 and current_type == "個股": continue 
+            # 手動輸入的標的，放寬成交量限制以免被濾掉
+            if vol < 1000 and current_type == "個股" and ticker not in manual_input: 
+                continue 
 
             vol_5ma = (hist['Volume'].tail(5).mean()) / 1000
             ma5 = hist['Close'].tail(5).mean()    
@@ -168,31 +188,31 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type):
         
     return df 
 
-# --- 📊 4. 畫面渲染 (Gemini 的極致自動貼合排版) ---
+# --- 📊 4. 畫面渲染 ---
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("即時數據載入中，請稍候..."):
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type)
+    # 傳入 manual_tickers_str 到運算引擎中
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str)
 
 if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
     
-    # 🔥 終極優化：關閉強制拉伸，並拿掉 width="large"，讓系統自動貼合文字長度！
     st.dataframe(
         display_df,
         hide_index=True,
-        use_container_width=False, # 絕對不允許表格擅自撐滿螢幕
+        use_container_width=False, 
         column_config={
             "標的": st.column_config.TextColumn("標的"),
-            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), # 💡 拿掉寬度限制，它就會乖乖貼著字了！
+            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
             "成交量(張)": st.column_config.NumberColumn("成交量"),
             "趨勢格局": st.column_config.TextColumn("趨勢格局")
         }
     )
 else:
-    st.info("目前沒有符合預算的標的。")
+    st.info("目前沒有符合預算的標的，或手動輸入的標的查無資料。")
 
 st.markdown("---")
-st.caption("📝 說明：系統已採用自動貼合 UI 設計，完美解決切字與留白過多的問題。")
+st.caption("📝 說明：系統已採用自動貼合 UI 設計，並支援手動自選標的動態追蹤。")
