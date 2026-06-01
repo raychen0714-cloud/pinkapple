@@ -108,7 +108,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             
             hist = tk.history(period="6mo", auto_adjust=False)
             
-            # 🔥 智慧上櫃(OTC)搜救機制：如果 .TW 抓不到，自動切換成 .TWO 再抓一次
             if hist.empty and is_manual and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
                 tk = yf.Ticker(ticker_two)
@@ -120,7 +119,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             
             hist = hist.replace([np.inf, -np.inf], np.nan).dropna(subset=['Close', 'Volume'])
             
-            # 🔥 放寬年齡限制：手動輸入只要滿 10 天就給過，不再嚴格要求 60 天
             if len(hist) < 10 and is_manual: continue
             elif len(hist) < 60 and not is_manual: continue
             
@@ -142,9 +140,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             ma5 = float(hist['Close'].tail(5).mean())    
             ma20 = float(hist['Close'].tail(20).mean())  
             
-            # 新股可能算不出季線，用 0 代替防當機
             ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
+            # 🔥 負乖離率：當現價遠低於月線(20MA)，bias 會是很大的負數 (例如 -12)
             bias = ((close_px - ma20) / ma20) * 100  
             px_up = close_px > prev_px               
             
@@ -161,14 +159,21 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
+            # --- 🤖 雙引擎決策系統 ---
             if current_type == "ETF" or (is_manual and ticker.replace(".TW","").replace(".TWO","").startswith("00")):
-                if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
+                # 🚀 新增：恐慌抄底雷達 (ETF 專屬)
+                # 條件：跌破季線 且 負乖離超過 -10% (代表短線跌過頭)
+                if trend_status in ["🔽 跌破季線 (波段防守)", "🧊 空頭排列 (極弱)"] and bias < -10:
+                    status = "恐慌超賣"
+                    note = "💎 跌深超賣！殖利率浮現，絕佳抄底撿便宜時機！"
+                elif trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
                     note = "🟢 趨勢向上，適合分批布局"
                 else:
                     status = "整理中"
                     note = "⚪ 進入整理，建議保持觀望"
             else:
+                # 個股維持原本的動能爆量雷達
                 if vol_surge and px_up:
                     status = "💥 爆量起漲"
                     note = "🐋 疑似大戶進場，強勢表態可跟進！"
@@ -185,8 +190,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                     status = "整理中"
                     note = "⚪ 量縮回檔，觀察支撐是否有效"
                 
+            # 短線過熱保護機制 (個股與ETF通用)
             if bias > 20:
-                note = "🔥 乖離率過高，短線過熱留意停利"
+                note = "🔥 乖離率過高，短線極度過熱，請留意獲利了結"
                 
             results.append({
                 "is_manual": is_manual,
