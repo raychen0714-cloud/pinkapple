@@ -31,10 +31,6 @@ STOCK_UNIVERSE = {
     "金融": {
         "2881.TW": "富邦金", "2882.TW": "國泰金", "2891.TW": "中信金", "2886.TW": "兆豐金",
         "2884.TW": "玉山金", "2892.TW": "第一金", "2880.TW": "華南金", "2885.TW": "元大金"
-    },
-    "重電與綠能": {
-        "1519.TW": "華城", "1503.TW": "士電", "1513.TW": "中興電", "1514.TW": "亞力",
-        "1609.TW": "大亞", "3708.TW": "上緯投控", "6806.TW": "森崴能源"
     }
 }
 
@@ -68,7 +64,7 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="如: 878, 56, 2330")
+manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="如: 878, 56, 3131")
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
@@ -80,7 +76,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
         
     manual_symbols = []
     if manual_input:
-        # 🔥 萬能標點符號破解：把全形逗號、頓號、空白全部換成標準逗號
         clean_input = manual_input.replace("，", ",").replace("、", ",").replace(" ", ",")
         raw_tickers = [t.strip().upper() for t in clean_input.split(",") if t.strip()]
         
@@ -112,10 +107,22 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             tk = yf.Ticker(ticker)
             
             hist = tk.history(period="6mo", auto_adjust=False)
+            
+            # 🔥 智慧上櫃(OTC)搜救機制：如果 .TW 抓不到，自動切換成 .TWO 再抓一次
+            if hist.empty and is_manual and ticker.endswith(".TW"):
+                ticker_two = ticker.replace(".TW", ".TWO")
+                tk = yf.Ticker(ticker_two)
+                hist = tk.history(period="6mo", auto_adjust=False)
+                if not hist.empty:
+                    ticker = ticker_two 
+                    
             if hist.empty: continue
             
             hist = hist.replace([np.inf, -np.inf], np.nan).dropna(subset=['Close', 'Volume'])
-            if len(hist) < 60: continue
+            
+            # 🔥 放寬年齡限制：手動輸入只要滿 10 天就給過，不再嚴格要求 60 天
+            if len(hist) < 10 and is_manual: continue
+            elif len(hist) < 60 and not is_manual: continue
             
             try:
                 close_px = float(tk.fast_info.last_price)
@@ -134,23 +141,27 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             vol_5ma = float(hist['Volume'].tail(5).mean()) / 1000
             ma5 = float(hist['Close'].tail(5).mean())    
             ma20 = float(hist['Close'].tail(20).mean())  
-            ma60 = float(hist['Close'].tail(60).mean())  
+            
+            # 新股可能算不出季線，用 0 代替防當機
+            ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
             bias = ((close_px - ma20) / ma20) * 100  
             px_up = close_px > prev_px               
             
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
-            if close_px > ma5 > ma20 > ma60:
+            if ma60 > 0 and close_px > ma5 > ma20 > ma60:
                 trend_status = "🔥 多頭排列 (強勢)" 
-            elif close_px < ma5 < ma20 < ma60:
+            elif ma60 > 0 and close_px < ma5 < ma20 < ma60:
                 trend_status = "🧊 空頭排列 (極弱)" 
-            elif close_px > ma60:
+            elif ma60 > 0 and close_px > ma60:
                 trend_status = "🔼 站上季線 (波段看多)" 
+            elif ma60 == 0:
+                trend_status = "📈 數據不足 (新股觀察)"
             else:
                 trend_status = "🔽 跌破季線 (波段防守)" 
 
-            if current_type == "ETF" or (is_manual and ticker.replace(".TW","").startswith("00")):
+            if current_type == "ETF" or (is_manual and ticker.replace(".TW","").replace(".TWO","").startswith("00")):
                 if trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     status = "趨勢向上"
                     note = "🟢 趨勢向上，適合分批布局"
@@ -178,7 +189,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 note = "🔥 乖離率過高，短線過熱留意停利"
                 
             results.append({
-                "is_manual": is_manual, # 🔥 隱藏的 VIP 排序標籤
+                "is_manual": is_manual,
                 "代號": ticker.replace(".TW", "").replace(".TWO",""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
@@ -191,9 +202,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # 🔥 VIP 置頂邏輯：先排「是不是手動輸入（True放前面）」，再來才排「成交量」
         df = df.sort_values(by=["is_manual", "成交量(張)"], ascending=[False, False])
-        # 顯示前把隱藏標籤丟掉，保持畫面乾淨
         df = df.drop(columns=["is_manual"])
     return df 
 
