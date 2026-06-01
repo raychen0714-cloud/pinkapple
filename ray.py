@@ -64,7 +64,13 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-manual_tickers_str = st.sidebar.text_input("🔍 4. 手動新增觀察標的", placeholder="如: 878, 56, 3131")
+
+# 🔥 專屬客製化：直接把你的持股寫成預設值 (value)，下次重開保證不會消失！
+manual_tickers_str = st.sidebar.text_input(
+    "🔍 4. 手動新增觀察標的", 
+    value="878, 919, 918, 0056, 927", 
+    placeholder="如: 878, 56, 3131"
+)
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
@@ -106,14 +112,13 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            # 🔥 專屬特權：如果是手動輸入的，順便去金庫把最新的配息資料挖出來
             div_info = ""
             if is_manual:
                 try:
                     divs = tk.dividends
                     if not divs.empty:
                         last_div = round(float(divs.iloc[-1]), 3)
-                        last_date = divs.index[-1].strftime("%Y-%m-%d") # 抓取最新除息日
+                        last_date = divs.index[-1].strftime("%Y-%m-%d")
                         div_info = f"💰 配息 {last_div}元 ({last_date})"
                 except:
                     pass
@@ -191,7 +196,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if bias > 20:
                 note = "🔥 乖離率過高，短線極度過熱，請留意獲利了結"
                 
-            # 🔥 將配息資訊無縫接軌進「系統建議」中
             if is_manual and div_info:
                 note = f"{div_info} ｜ {note}"
                 
