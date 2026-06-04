@@ -2,20 +2,39 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import json
+import os
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="戰情室", layout="wide")
 
-# --- 💾 初始化 Session State 記憶體 ---
-if 'total_div' not in st.session_state:
-    st.session_state.total_div = 0.0
+# --- 💾 永久記憶系統 (寫入本機檔案) ---
+DATA_FILE = "user_data.json"
 
-if 'custom_div_map' not in st.session_state:
-    st.session_state.custom_div_map = {
-        "00919.TW": "1.0元 (請手動更新日期)",
-        "00918.TW": "1.26元 (請手動更新日期)",
-        "0056.TW": "1.0元 (2026-04-23)" 
+def load_data():
+    # 如果檔案存在，就把上次存的記憶讀出來
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    # 如果是第一次用，就給預設值
+    return {
+        "total_div": 0.0,
+        "max_price": 1000,
+        "custom_div_map": {
+            "00919.TW": "1.0元 (請手動更新日期)",
+            "00918.TW": "1.26元 (請手動更新日期)",
+            "0056.TW": "1.0元 (2026-04-23)" 
+        }
     }
+
+def save_data(data):
+    # 把記憶寫進實體檔案，保證重開機也不會不見
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# 讀取記憶到網頁中
+if 'app_data' not in st.session_state:
+    st.session_state.app_data = load_data()
 
 # --- 💰 存股配息金庫 (全新頂部 UI) ---
 st.markdown("### 💰 存股配息金庫")
@@ -33,12 +52,14 @@ with col_left:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             submitted_div = st.form_submit_button("➕ 加入總額", use_container_width=True)
             if submitted_div:
-                st.session_state.total_div += amount_input
+                # 加上去並存檔！
+                st.session_state.app_data["total_div"] += amount_input
+                save_data(st.session_state.app_data)
                 st.rerun()
 
 with col_right:
     st.markdown("#### 🏆 總領配息累計")
-    st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.total_div:,.0f}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.app_data['total_div']:,.0f}</h1>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -86,10 +107,16 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=1000, step=10)
+# 🔥 讀取你上次存的最高價位
+current_max = st.session_state.app_data.get("max_price", 1000)
+max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10)
+
+# 如果你有改動價位，立刻存進檔案裡！
+if max_price != current_max:
+    st.session_state.app_data["max_price"] = max_price
+    save_data(st.session_state.app_data)
 
 st.sidebar.markdown("---")
-# 🔥 全新加入：只看自選標的開關
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏上方系統清單)", value=False)
 
 manual_tickers_str = st.sidebar.text_input(
@@ -109,7 +136,9 @@ with st.sidebar.form("update_div_form"):
     submitted_update = st.form_submit_button("⚡ 瞬間強制更新", use_container_width=True)
     if submitted_update and update_ticker and update_amt and update_date:
         t_key = f"{update_ticker}.TW" if not update_ticker.endswith(".TW") else update_ticker
-        st.session_state.custom_div_map[t_key] = f"{update_amt}元 ({update_date})"
+        # 寫入專屬字典並存檔
+        st.session_state.app_data["custom_div_map"][t_key] = f"{update_amt}元 ({update_date})"
+        save_data(st.session_state.app_data)
         st.rerun()
 
 # --- 🧠 3. 核心運算引擎 ---
@@ -117,7 +146,6 @@ with st.sidebar.form("update_div_form"):
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
     tickers_to_fetch = {}
     
-    # 🔥 如果沒有勾選「只看自選」，才把預設清單加進來
     if not only_manual_flag:
         for cat in categories:
             tickers_to_fetch.update(universe_dict[cat].copy())
@@ -240,14 +268,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 st.subheader(f"🔍 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("真實證券報價與配息資料同步中..."):
-    # 傳入 only_manual 變數
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
 
 if not final_data.empty:
     def assign_final_dividend(row):
         t_key = f"{row['代號']}.TW"
-        if t_key in st.session_state.custom_div_map:
-            return st.session_state.custom_div_map[t_key]
+        # 覆寫邏輯：直接去永久記憶庫抓資料
+        if t_key in st.session_state.app_data["custom_div_map"]:
+            return st.session_state.app_data["custom_div_map"][t_key]
         return row['Yahoo配息']
 
     final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
