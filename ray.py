@@ -86,16 +86,18 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
+max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=1000, step=10)
 
 st.sidebar.markdown("---")
+# 🔥 全新加入：只看自選標的開關
+only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏上方系統清單)", value=False)
+
 manual_tickers_str = st.sidebar.text_input(
     "🔍 4. 手動新增觀察標的", 
     value="878, 919, 918, 0056, 927, 0052, 2409, 6116", 
     placeholder="如: 878, 56, 3131"
 )
 
-# 🔥 優化：使用 st.form 打包，避免輸入一半畫面亂跳
 st.sidebar.markdown("---")
 with st.sidebar.form("update_div_form"):
     st.markdown("### ✏️ 5. 瞬間更新最新配息")
@@ -110,12 +112,15 @@ with st.sidebar.form("update_div_form"):
         st.session_state.custom_div_map[t_key] = f"{update_amt}元 ({update_date})"
         st.rerun()
 
-# --- 🧠 3. 核心運算引擎 (只負責抓 Yahoo，不再被配息變更拖累) ---
+# --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
-def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input):
+def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
     tickers_to_fetch = {}
-    for cat in categories:
-        tickers_to_fetch.update(universe_dict[cat].copy())
+    
+    # 🔥 如果沒有勾選「只看自選」，才把預設清單加進來
+    if not only_manual_flag:
+        for cat in categories:
+            tickers_to_fetch.update(universe_dict[cat].copy())
         
     manual_symbols = []
     if manual_input:
@@ -150,7 +155,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                         if real_name: name = real_name
                     except: pass
 
-            # 只抓 Yahoo 預設的配息
             yahoo_div_info = "-"
             if is_manual:
                 try:
@@ -222,7 +226,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
                 "🤖 系統建議": note,
-                "Yahoo配息": yahoo_div_info # 先把 Yahoo 抓到的存起來
+                "Yahoo配息": yahoo_div_info 
             })
         except: continue
             
@@ -233,14 +237,13 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     return df 
 
 # --- 📊 4. 畫面渲染 ---
-st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
+st.subheader(f"🔍 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("真實證券報價與配息資料同步中..."):
-    # 這裡只負責抓資料，不傳入自訂字典，保證 Cache 完美發揮作用
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str)
+    # 傳入 only_manual 變數
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
 
 if not final_data.empty:
-    # 🔥 0.01 秒瞬間覆寫魔法：在渲染前，把自訂配息貼上去
     def assign_final_dividend(row):
         t_key = f"{row['代號']}.TW"
         if t_key in st.session_state.custom_div_map:
