@@ -19,8 +19,9 @@ def load_data():
         "total_div": 0.0,
         "max_price": 1000,
         "custom_div_map": {
-            "00919.TW": "1.0元 (請手動更新日期)",
-            "00918.TW": "1.26元 (請手動更新日期)",
+            # 預設留空或給基本格式，以後你直接在表格上改
+            "00919.TW": "1.0元",
+            "00918.TW": "1.26元",
             "0056.TW": "1.0元 (2026-04-23)" 
         }
     }
@@ -56,7 +57,6 @@ with col_right:
     st.markdown("#### 🏆 總領配息累計")
     st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.app_data['total_div']:,.0f}</h1>", unsafe_allow_html=True)
     
-    # 🔥 全新：隱藏版的總額校正開關
     with st.expander("🛠️ 不小心輸入錯誤？點此手動校正總額"):
         correct_val = st.number_input("直接輸入正確的總金額", value=int(st.session_state.app_data['total_div']), step=1000)
         if st.button("💾 強制覆寫總額", use_container_width=True):
@@ -125,21 +125,7 @@ manual_tickers_str = st.sidebar.text_input(
     value="878, 919, 918, 0056, 927, 0052, 2409, 6116", 
     placeholder="如: 878, 56, 3131"
 )
-
-st.sidebar.markdown("---")
-with st.sidebar.form("update_div_form"):
-    st.markdown("### ✏️ 5. 瞬間更新最新配息")
-    st.caption("改版為秒速更新，不需重新連線 Yahoo")
-    update_ticker = st.text_input("輸入代號 (如 00919)")
-    update_amt = st.text_input("配息金額 (如 1.0)")
-    update_date = st.text_input("除息日期 (如 2026-06-15)")
-    
-    submitted_update = st.form_submit_button("⚡ 瞬間強制更新", use_container_width=True)
-    if submitted_update and update_ticker and update_amt and update_date:
-        t_key = f"{update_ticker}.TW" if not update_ticker.endswith(".TW") else update_ticker
-        st.session_state.app_data["custom_div_map"][t_key] = f"{update_amt}元 ({update_date})"
-        save_data(st.session_state.app_data)
-        st.rerun()
+# 🔥 左邊手動輸入配息的區塊已經徹底刪除了！
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=30) 
@@ -248,6 +234,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             results.append({
                 "is_manual": is_manual,
+                "原始代號": ticker,  # 🔥 偷藏一個原始代號，用來精準存檔
                 "代號": ticker.replace(".TW", "").replace(".TWO",""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
@@ -271,8 +258,9 @@ with st.spinner("真實證券報價與配息資料同步中..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
 
 if not final_data.empty:
+    # 決定顯示哪一個配息（優先顯示你手動存過的）
     def assign_final_dividend(row):
-        t_key = f"{row['代號']}.TW"
+        t_key = row['原始代號']
         if t_key in st.session_state.app_data["custom_div_map"]:
             return st.session_state.app_data["custom_div_map"][t_key]
         return row['Yahoo配息']
@@ -280,20 +268,40 @@ if not final_data.empty:
     final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    # 整理出要顯示在表格上的欄位
+    display_df = final_data[['原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     
-    st.dataframe(
+    # 🔥 啟動超強 data_editor，直接把表格變成 Excel！
+    edited_df = st.data_editor(
         display_df,
         hide_index=True,
         use_container_width=False, 
+        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], # 把除了配息以外的欄位都鎖住，防呆！
         column_config={
+            "原始代號": None, # 把用來對照的代號隱藏起來，維持版面乾淨
             "標的": st.column_config.TextColumn("標的"),
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
             "成交量(張)": st.column_config.NumberColumn("成交量"),
             "趨勢格局": st.column_config.TextColumn("趨勢格局"),
-            "💰 最新配息": st.column_config.TextColumn("💰 最新配息")
+            # 加上雙擊提示
+            "💰 最新配息": st.column_config.TextColumn("💰 最新配息 (✎ 雙擊修改)") 
         }
     )
+
+    # 🔥 偵測你在表格上的任何修改，並立刻寫入硬碟鎖死！
+    has_changes = False
+    for i in range(len(display_df)):
+        old_val = display_df.iloc[i]['💰 最新配息']
+        new_val = edited_df.iloc[i]['💰 最新配息']
+        if old_val != new_val:
+            ticker_key = edited_df.iloc[i]['原始代號']
+            st.session_state.app_data["custom_div_map"][ticker_key] = new_val
+            has_changes = True
+            
+    if has_changes:
+        save_data(st.session_state.app_data)
+        st.success("💾 配息資料已成功更新並永久儲存！(關閉網頁也不會消失)")
+
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
