@@ -11,7 +11,15 @@ CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
     "00692.TW": "富邦公司治理",
-    "00713.TW": "元大台灣高息低波"
+    "00713.TW": "元大台灣高息低波",
+    "4958.TW": "臻鼎-KY"
+}
+
+# --- 💰 專屬配息覆蓋字典 (解決 Yahoo API 尚未除息不更新的問題) ---
+CUSTOM_DIVIDEND_MAP = {
+    "00919.TW": "1.0元 (最新公告)",
+    "00918.TW": "1.26元 (最新公告)",
+    "0056.TW": "1.0元 (最新公告)"
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -74,7 +82,7 @@ max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, st
 st.sidebar.markdown("---")
 manual_tickers_str = st.sidebar.text_input(
     "🔍 4. 手動新增觀察標的", 
-    value="878, 919, 918, 0056, 927, 0052", 
+    value="878, 919, 918, 0056, 927, 0052, 2409, 6116", 
     placeholder="如: 878, 56, 3131"
 )
 
@@ -118,7 +126,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            # 🔥 修正：優先使用自訂字典，如果沒有才去抓 Yahoo 的 (避免抓回英文)
             if name == "自選標的":
                 if ticker in CUSTOM_NAME_MAP:
                     name = CUSTOM_NAME_MAP[ticker]
@@ -132,14 +139,18 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 
             div_info = "-"
             if is_manual:
-                try:
-                    divs = tk.dividends
-                    if not divs.empty:
-                        last_div = round(float(divs.iloc[-1]), 3)
-                        last_date = divs.index[-1].strftime("%Y-%m-%d")
-                        div_info = f"{last_div}元 ({last_date})"
-                except:
-                    pass
+                # 🔥 修正：優先讀取我們手動維護的「專屬配息字典」
+                if ticker in CUSTOM_DIVIDEND_MAP:
+                    div_info = CUSTOM_DIVIDEND_MAP[ticker]
+                else:
+                    try:
+                        divs = tk.dividends
+                        if not divs.empty:
+                            last_div = round(float(divs.iloc[-1]), 3)
+                            last_date = divs.index[-1].strftime("%Y-%m-%d")
+                            div_info = f"{last_div}元 ({last_date})"
+                    except:
+                        pass
 
             hist = tk.history(period="6mo", auto_adjust=False)
             
