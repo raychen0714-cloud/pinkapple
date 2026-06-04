@@ -6,6 +6,14 @@ import numpy as np
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="戰情室", layout="wide")
 
+# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 顯示長串英文的問題) ---
+CUSTOM_NAME_MAP = {
+    "0050.TW": "元大台灣50",
+    "0052.TW": "富邦科技",
+    "00692.TW": "富邦公司治理",
+    "00713.TW": "元大台灣高息低波"
+}
+
 # --- 📂 1. 定義標的池 ---
 STOCK_UNIVERSE = {
     "半導體": {
@@ -110,14 +118,17 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            # 🔥 修正1：如果名稱還是「自選標的」，強制去網路抓它的真實中文名
+            # 🔥 修正：優先使用自訂字典，如果沒有才去抓 Yahoo 的 (避免抓回英文)
             if name == "自選標的":
-                try:
-                    real_name = tk.info.get("shortName")
-                    if real_name:
-                        name = real_name
-                except:
-                    pass
+                if ticker in CUSTOM_NAME_MAP:
+                    name = CUSTOM_NAME_MAP[ticker]
+                else:
+                    try:
+                        real_name = tk.info.get("shortName")
+                        if real_name:
+                            name = real_name
+                    except:
+                        pass
 
             div_info = "-"
             if is_manual:
@@ -211,7 +222,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
                 "🤖 系統建議": note,
-                "💰 最新配息": div_info  # 🔥 修正2：建立獨立的配息欄位
+                "💰 最新配息": div_info
             })
         except:
             continue
@@ -231,7 +242,6 @@ with st.spinner("真實證券報價與配息資料同步中..."):
 if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 🔥 重新排列順序，把配息擠到最後面
     display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     
     st.dataframe(
@@ -244,7 +254,7 @@ if not final_data.empty:
             "現價": st.column_config.NumberColumn("現價"),
             "成交量(張)": st.column_config.NumberColumn("成交量"),
             "趨勢格局": st.column_config.TextColumn("趨勢格局"),
-            "💰 最新配息": st.column_config.TextColumn("💰 最新配息") # 設定新欄位
+            "💰 最新配息": st.column_config.TextColumn("💰 最新配息")
         }
     )
 else:
