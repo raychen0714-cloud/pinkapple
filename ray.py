@@ -64,11 +64,9 @@ else:
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=100, step=10)
 
 st.sidebar.markdown("---")
-
-# 🔥 專屬客製化：直接把你的持股寫成預設值 (value)，下次重開保證不會消失！
 manual_tickers_str = st.sidebar.text_input(
     "🔍 4. 手動新增觀察標的", 
-    value="878, 919, 918, 0056, 927", 
+    value="878, 919, 918, 0056, 927, 0052", 
     placeholder="如: 878, 56, 3131"
 )
 
@@ -112,14 +110,23 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            div_info = ""
+            # 🔥 修正1：如果名稱還是「自選標的」，強制去網路抓它的真實中文名
+            if name == "自選標的":
+                try:
+                    real_name = tk.info.get("shortName")
+                    if real_name:
+                        name = real_name
+                except:
+                    pass
+
+            div_info = "-"
             if is_manual:
                 try:
                     divs = tk.dividends
                     if not divs.empty:
                         last_div = round(float(divs.iloc[-1]), 3)
                         last_date = divs.index[-1].strftime("%Y-%m-%d")
-                        div_info = f"💰 配息 {last_div}元 ({last_date})"
+                        div_info = f"{last_div}元 ({last_date})"
                 except:
                     pass
 
@@ -196,9 +203,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if bias > 20:
                 note = "🔥 乖離率過高，短線極度過熱，請留意獲利了結"
                 
-            if is_manual and div_info:
-                note = f"{div_info} ｜ {note}"
-                
             results.append({
                 "is_manual": is_manual,
                 "代號": ticker.replace(".TW", "").replace(".TWO",""), 
@@ -206,7 +210,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "🤖 系統建議": note
+                "🤖 系統建議": note,
+                "💰 最新配息": div_info  # 🔥 修正2：建立獨立的配息欄位
             })
         except:
             continue
@@ -225,7 +230,9 @@ with st.spinner("真實證券報價與配息資料同步中..."):
 
 if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
-    display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局']]
+    
+    # 🔥 重新排列順序，把配息擠到最後面
+    display_df = final_data[['標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     
     st.dataframe(
         display_df,
@@ -236,7 +243,8 @@ if not final_data.empty:
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
             "成交量(張)": st.column_config.NumberColumn("成交量"),
-            "趨勢格局": st.column_config.TextColumn("趨勢格局")
+            "趨勢格局": st.column_config.TextColumn("趨勢格局"),
+            "💰 最新配息": st.column_config.TextColumn("💰 最新配息") # 設定新欄位
         }
     )
 else:
