@@ -6,20 +6,50 @@ import numpy as np
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="戰情室", layout="wide")
 
-# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 顯示長串英文的問題) ---
+# --- 💾 初始化 Session State 記憶體 ---
+# 記憶你的總領配息金額
+if 'total_div' not in st.session_state:
+    st.session_state.total_div = 0.0
+
+# 記憶你手動更新的配息資料
+if 'custom_div_map' not in st.session_state:
+    st.session_state.custom_div_map = {
+        "00919.TW": "1.0元 (請至左側手動更新日期)",
+        "00918.TW": "1.26元 (請至左側手動更新日期)",
+        "0056.TW": "1.0元 (2026-04-23)" 
+    }
+
+# --- 💰 存股配息金庫 (全新頂部 UI) ---
+st.markdown("### 💰 存股配息金庫")
+col_left, col_right = st.columns(2)
+
+with col_left:
+    st.markdown("#### 📥 紀錄本月配息入帳")
+    c1, c2, c3 = st.columns([1, 2, 2])
+    with c1:
+        month_input = st.number_input("月份", min_value=1, max_value=12, value=6, step=1)
+    with c2:
+        amount_input = st.number_input("入帳金額 (元)", min_value=0, value=0, step=100)
+    with c3:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("➕ 加入總額", use_container_width=True):
+            st.session_state.total_div += amount_input
+            st.rerun()
+
+with col_right:
+    st.markdown("#### 🏆 總領配息累計")
+    # 使用藍色大字體凸顯成就感
+    st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.total_div:,.0f}</h1>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# --- 📝 專屬自訂名稱字典 ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
     "00692.TW": "富邦公司治理",
     "00713.TW": "元大台灣高息低波",
     "4958.TW": "臻鼎-KY"
-}
-
-# --- 💰 專屬配息覆蓋字典 (解決 Yahoo API 尚未除息不更新的問題) ---
-CUSTOM_DIVIDEND_MAP = {
-    "00919.TW": "1.0元 (最新公告)",
-    "00918.TW": "1.26元 (最新公告)",
-    "0056.TW": "1.0元 (最新公告)"
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -35,18 +65,6 @@ STOCK_UNIVERSE = {
     "光電與面板": {
         "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光", 
         "3406.TW": "玉晶光", "3714.TW": "富采", "2498.TW": "宏達電", "6209.TW": "今國光"
-    },
-    "航運": {
-        "2603.TW": "長榮", "2609.TW": "陽明", "2615.TW": "萬海", "2610.TW": "華航", 
-        "2618.TW": "長榮航", "2606.TW": "裕民", "2637.TW": "慧洋-KY", "2614.TW": "東森"
-    },
-    "電子與電腦周邊": {
-        "2317.TW": "鴻海", "2382.TW": "廣達", "3231.TW": "緯創", "2356.TW": "英業達", 
-        "2324.TW": "仁寶", "2301.TW": "光寶科", "2357.TW": "華碩", "2353.TW": "宏碁"
-    },
-    "金融": {
-        "2881.TW": "富邦金", "2882.TW": "國泰金", "2891.TW": "中信金", "2886.TW": "兆豐金",
-        "2884.TW": "玉山金", "2892.TW": "第一金", "2880.TW": "華南金", "2885.TW": "元大金"
     }
 }
 
@@ -59,11 +77,7 @@ ETF_UNIVERSE = {
     "半導體與科技": {
         "00927.TW": "群益半導體收益", "00881.TW": "國泰台灣5G+", "00891.TW": "中信關鍵半導體",
         "00892.TW": "富邦台灣半導體", "00935.TW": "野村臺灣新科技50"
-    },
-    "大盤與槓桿": {
-        "006208.TW": "富邦台50", 
-        "00631L.TW": "元大台灣50正2", "00632R.TW": "元大台灣50反1", "00670L.TW": "富邦NASDAQ正2"
-    } 
+    }
 }
 
 # --- 🎛️ 2. 動態篩選控制台 (UI) ---
@@ -86,9 +100,25 @@ manual_tickers_str = st.sidebar.text_input(
     placeholder="如: 878, 56, 3131"
 )
 
+# 🔥 全新：手動強制更新配息區塊
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ✏️ 5. 手動更新最新配息")
+st.sidebar.caption("Yahoo 沒更新的，我們自己來！")
+update_ticker = st.sidebar.text_input("輸入代號 (如 00919)", key="up_t")
+update_amt = st.sidebar.text_input("配息金額 (如 1.0)", key="up_a")
+update_date = st.sidebar.text_input("除息日期 (如 2026-06-15)", key="up_d")
+
+if st.sidebar.button("💾 強制更新配息資料", use_container_width=True):
+    if update_ticker and update_amt and update_date:
+        t_key = f"{update_ticker}.TW" if not update_ticker.endswith(".TW") else update_ticker
+        # 將最新的金額與日期寫入你的專屬記憶體
+        st.session_state.custom_div_map[t_key] = f"{update_amt}元 ({update_date})"
+        st.rerun()
+
 # --- 🧠 3. 核心運算引擎 ---
+# 注意：這裡把 custom_divs 傳進來，這樣你只要一更新，系統就會重算
 @st.cache_data(ttl=30) 
-def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input):
+def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, custom_divs):
     tickers_to_fetch = {}
     
     for cat in categories:
@@ -139,9 +169,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 
             div_info = "-"
             if is_manual:
-                # 🔥 修正：優先讀取我們手動維護的「專屬配息字典」
-                if ticker in CUSTOM_DIVIDEND_MAP:
-                    div_info = CUSTOM_DIVIDEND_MAP[ticker]
+                # 🔥 直接去你的「專屬記憶體」裡面拿你剛剛設定的配息與日期
+                if ticker in custom_divs:
+                    div_info = custom_divs[ticker]
                 else:
                     try:
                         divs = tk.dividends
@@ -248,7 +278,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 st.subheader(f"🔍 {target_type} 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("真實證券報價與配息資料同步中..."):
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str)
+    # 將 session_state 裡的手動配息紀錄傳進去運算
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, st.session_state.custom_div_map)
 
 if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
