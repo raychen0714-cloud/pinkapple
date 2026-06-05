@@ -181,11 +181,22 @@ if max_price != current_max:
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
 
+# --- 修正後的「手動新增觀察標的」區塊 ---
+# 1. 先從永久儲存區讀取清單，沒有的話才用預設值
+saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116")
+
+# 2. 建立輸入框，並將 value 指向讀取到的清單
 manual_tickers_str = st.sidebar.text_input(
-    "🔍 4. 手動新增觀察標的", 
-    value="878, 919, 918, 0056, 927, 0052, 2409, 6116", 
-    placeholder="如: 878, 56, 3131"
+    "🔍 4. 手動新增觀察標的 (設定後會永久儲存)", 
+    value=saved_tickers, 
+    placeholder="如: 878, 56, 3481"
 )
+
+# 3. 偵測輸入變更，一旦改變就立即存檔
+if manual_tickers_str != saved_tickers:
+    st.session_state.app_data["manual_tickers"] = manual_tickers_str
+    save_data(st.session_state.app_data)
+    st.rerun() # 自動重整以更新報表
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=60) 
