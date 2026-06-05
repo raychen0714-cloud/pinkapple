@@ -327,4 +327,133 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "📊 官方籌
+                "📊 官方籌碼": current_chip,  
+                "🤖 系統建議": note,
+                "Yahoo配息": yahoo_div_info 
+            })
+        except: continue
+            
+    df = pd.DataFrame(results)
+    if not df.empty:
+        df = df.sort_values(by=["成交量(張)"], ascending=[False])
+        df.reset_index(drop=True, inplace=True)
+    return df 
+
+# --- 📊 4. 畫面渲染 (頂部選單區) ---
+col_menu1, col_menu2 = st.columns(2)
+
+with col_menu1:
+    with st.expander("📊 K線型態速查對照表", expanded=False):
+        c_k1, c_k2, c_k3, c_k4 = st.columns(4)
+        with c_k1:
+            st.markdown("### 🚀 紅K")
+            st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
+            st.caption("多頭全面控盤")
+        with c_k2:
+            st.markdown("### 🔻 黑K")
+            st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
+            st.caption("空方強勢表態")
+        with c_k3:
+            st.markdown("### ⚠️ 上影線")
+            st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
+            st.caption("高檔遭遇反撲")
+        with c_k4:
+            st.markdown("### 💡 下影線")
+            st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
+            st.caption("低檔買盤護盤")
+
+with col_menu2:
+    # 🔥🔥🔥 全新：國際財經與大老動態 (即時新聞) 🔥🔥🔥
+    with st.expander("🌍 國際財經與大老動態 (即時新聞)", expanded=False):
+        tab_jensen, tab_trump, tab_finance = st.tabs(["👑 黃仁勳動態", "🦅 川普發言", "📈 今日財經焦點"])
+        
+        with tab_jensen:
+            st.caption("每 30 分鐘自動攔截最新動態")
+            news_jensen = fetch_realtime_news("黃仁勳 OR 輝達 OR NVIDIA")
+            for item in news_jensen:
+                st.markdown(f"➤ [{item['title']}]({item['link']})")
+                
+        with tab_trump:
+            st.caption("關注關稅與地緣政治談話")
+            news_trump = fetch_realtime_news("川普 OR Trump 股市")
+            for item in news_trump:
+                st.markdown(f"➤ [{item['title']}]({item['link']})")
+                
+        with tab_finance:
+            st.caption("台股大盤與財經要聞")
+            news_finance = fetch_realtime_news("台股 OR 聯準會 OR 降息")
+            for item in news_finance:
+                st.markdown(f"➤ [{item['title']}]({item['link']})")
+
+st.markdown("---")
+st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
+
+with st.spinner("真實證券報價、官方籌碼與配息資料同步中..."):
+    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
+
+if not final_data.empty:
+    def assign_final_dividend(row):
+        t_key = row['原始代號']
+        if t_key in st.session_state.app_data["custom_div_map"]:
+            return st.session_state.app_data["custom_div_map"][t_key]
+        return row['Yahoo配息']
+
+    final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
+    
+    held_list = st.session_state.app_data.get("held_stocks", [])
+    final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
+    final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
+    
+    display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
+    
+    edited_df = st.data_editor(
+        display_df,
+        key="portfolio_editor", 
+        hide_index=True,
+        use_container_width=False, 
+        disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
+        column_config={
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
+            "原始代號": None, 
+            "標的": st.column_config.TextColumn("標的"),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 官方籌碼 (盤後同步)"),
+            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
+            "現價": st.column_config.NumberColumn("現價"),
+            "成交量(張)": st.column_config.NumberColumn("成交量(張) (✎ 手動覆寫真實量)"),
+            "趨勢格局": st.column_config.TextColumn("趨勢格局"),
+            "💰 最新配息": st.column_config.TextColumn("💰 最新配息 (✎ 雙擊修改)") 
+        }
+    )
+
+    if "portfolio_editor" in st.session_state:
+        edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
+        if edited_rows:
+            has_changes = False
+            current_held = st.session_state.app_data.get("held_stocks", [])
+            
+            for str_idx, changes in edited_rows.items():
+                row_idx = int(str_idx)
+                ticker_key = display_df.iloc[row_idx]['原始代號']
+                
+                if "📌 持有" in changes:
+                    is_checked = changes["📌 持有"]
+                    if is_checked and (ticker_key not in current_held):
+                        current_held.append(ticker_key)
+                    elif (not is_checked) and (ticker_key in current_held):
+                        current_held.remove(ticker_key)
+                    st.session_state.app_data["held_stocks"] = current_held
+                    has_changes = True
+                
+                if "💰 最新配息" in changes:
+                    new_val = changes["💰 最新配息"]
+                    st.session_state.app_data["custom_div_map"][ticker_key] = new_val
+                    has_changes = True
+                    
+            if has_changes:
+                save_data(st.session_state.app_data)       
+                st.session_state.show_save_success = True  
+                st.rerun()                                 
+
+else:
+    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
