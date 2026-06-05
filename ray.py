@@ -435,22 +435,23 @@ if not final_data.empty:
     display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
+    # 啟動 PRO 級試算表編輯器 (優化版)
     edited_df = st.data_editor(
         display_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=False, 
+        use_container_width=True, # 改為 True，讓它自動適應螢幕寬度
         disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 官方籌碼 (盤後同步)"),
-            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
-            "現價": st.column_config.NumberColumn("現價"),
-            "成交量(張)": st.column_config.NumberColumn("成交量(張) (✎ 手動覆寫真實量)"),
-            "趨勢格局": st.column_config.TextColumn("趨勢格局"),
-            "💰 最新配息": st.column_config.TextColumn("💰 最新配息 (✎ 雙擊修改)") 
+            "標的": st.column_config.TextColumn("標的", width="medium"),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"), # 縮短標題
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), # 縮短標題
+            "現價": st.column_config.NumberColumn("現價", width="small"),
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"), # 砍掉長備註
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), # 縮短標題
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 縮短標題
         }
     )
 
