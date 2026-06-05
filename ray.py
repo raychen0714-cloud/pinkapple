@@ -23,7 +23,9 @@ def load_data():
             "00919.TW": "1.0元",
             "00918.TW": "1.26元",
             "0056.TW": "1.0元 (2026-04-23)" 
-        }
+        },
+        # 🔥 預設幫你把核心持股設定為持有打勾狀態
+        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"]
     }
 
 def save_data(data):
@@ -33,11 +35,12 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
+# 顯示儲存成功的提示小工具 (Toast)
 if st.session_state.get("show_save_success", False):
-    st.toast("💾 配息資料已成功更新並永久儲存！", icon="✅")
+    st.toast("💾 戰情室設定已成功同步並永久儲存！", icon="✅")
     st.session_state.show_save_success = False
 
-# --- 💰 存股配息金庫 ---
+# --- 💰 存股配息金庫 (頂部 UI) ---
 st.markdown("### 💰 PRO 級存股配息金庫")
 col_left, col_right = st.columns(2)
 
@@ -70,7 +73,7 @@ with col_right:
 
 st.markdown("---")
 
-# --- 📝 專屬自訂名稱字典 ---
+# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 英文亂碼) ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
@@ -215,7 +218,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
             if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列 (強勢)" 
-            elif ma60 > 0 and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列 (極弱)" 
+            elif ma60 > 0 collector and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列 (極弱)" 
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線 (波段看多)" 
             elif ma60 == 0: trend_status = "📈 數據不足 (新股觀察)"
             else: trend_status = "🔽 跌破季線 (波段防守)" 
@@ -235,7 +238,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             if bias > 20: note = "🔥 乖離率過高，請留意獲利了結"
 
-            # 🔥🔥🔥 全新：K棒型態辨識引擎 🔥🔥🔥
+            # K棒型態辨識引擎
             try:
                 O = float(hist['Open'].iloc[-1])
                 H = max(float(hist['High'].iloc[-1]), close_px)
@@ -249,21 +252,15 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 
                 k_msg = "➖ 不明顯"
                 if tr > 0:
-                    # 實體佔比大於 60% 視為長紅/長綠K
                     if body / tr >= 0.6:
                         if C >= O: k_msg = "🚀 看漲"
                         else: k_msg = "🔻 看跌"
-                    # 上影線大於實體1.5倍，且大於下影線1.5倍 視為轉弱
                     elif up_shadow > body * 1.5 and up_shadow > dn_shadow * 1.5:
                         k_msg = "⚠️ 可能轉弱"
-                    # 下影線大於實體1.5倍，且大於上影線1.5倍 視為轉強
                     elif dn_shadow > body * 1.5 and dn_shadow > up_shadow * 1.5:
                         k_msg = "💡 可能轉強"
-                
-                # 將 K 棒判定加入建議最前方
                 note = f"[{k_msg}] {note}"
-            except:
-                pass # 防呆機制，若當日無高低價資料則略過 K 線運算
+            except: pass
 
             results.append({
                 "is_manual": is_manual,
@@ -280,8 +277,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             
     df = pd.DataFrame(results)
     if not df.empty:
-        df = df.sort_values(by=["is_manual", "成交量(張)"], ascending=[False, False])
-        df = df.drop(columns=["is_manual"])
+        df = df.sort_values(by=["成交量(張)"], ascending=[False])
         df.reset_index(drop=True, inplace=True)
     return df 
 
@@ -292,6 +288,7 @@ with st.spinner("真實證券報價與配息資料同步中..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
 
 if not final_data.empty:
+    # 建立配息覆寫邏輯
     def assign_final_dividend(row):
         t_key = row['原始代號']
         if t_key in st.session_state.app_data["custom_div_map"]:
@@ -299,17 +296,25 @@ if not final_data.empty:
         return row['Yahoo配息']
 
     final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
+    
+    # 🔥 核心修正：動態對照硬碟記憶，生出「📌 持有」的布林值欄位
+    held_list = st.session_state.app_data.get("held_stocks", [])
+    final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    # 重新排列欄位，將「📌 持有」放在最前面方便點擊，並且【依照持有狀態排序：有持有的(True)在上面，沒持有的(False)在下面】
+    display_df = final_data[['📌 持有', '原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    st.data_editor(
+    # 啟動試算表編輯器
+    edited_df = st.data_editor(
         display_df,
         key="portfolio_editor", 
         hide_index=True,
         use_container_width=False, 
-        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], 
+        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], # 📌 持有 與 💰 最新配息 開放編輯
         column_config={
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", help="勾選代表持有該標的，將優先置頂"),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的"),
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
@@ -320,15 +325,30 @@ if not final_data.empty:
         }
     )
 
+    # 🔥 終極攔截器：同時偵測「勾選持有」與「修改配息」，有任何變動秒速寫入硬碟
     if "portfolio_editor" in st.session_state:
         edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
         if edited_rows:
             has_changes = False
+            current_held = st.session_state.app_data.get("held_stocks", [])
+            
             for str_idx, changes in edited_rows.items():
                 row_idx = int(str_idx)
+                ticker_key = display_df.iloc[row_idx]['原始代號']
+                
+                # 1. 如果修改了「📌 持有」狀態
+                if "📌 持有" in changes:
+                    is_checked = changes["📌 持有"]
+                    if is_checked and (ticker_key not in current_held):
+                        current_held.append(ticker_key)
+                    elif (not is_checked) and (ticker_key in current_held):
+                        current_held.remove(ticker_key)
+                    st.session_state.app_data["held_stocks"] = current_held
+                    has_changes = True
+                
+                # 2. 如果修改了「💰 最新配息」
                 if "💰 最新配息" in changes:
                     new_val = changes["💰 最新配息"]
-                    ticker_key = display_df.iloc[row_idx]['原始代號']
                     st.session_state.app_data["custom_div_map"][ticker_key] = new_val
                     has_changes = True
                     
