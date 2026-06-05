@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import requests # 🔥 新增：用來抓取證交所官方資料的模組
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
@@ -22,9 +23,8 @@ def load_data():
         "custom_div_map": {
             "00919.TW": "1.0元",
             "00918.TW": "1.26元",
-            "0056.TW": "1.0元 (2026-04-23)" 
+            "0056.TW": "1.0元" 
         },
-        # 🔥 預設核心持股
         "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"]
     }
 
@@ -35,7 +35,6 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# 顯示儲存成功的提示小工具 (Toast)
 if st.session_state.get("show_save_success", False):
     st.toast("💾 戰情室設定已成功同步並永久儲存！", icon="✅")
     st.session_state.show_save_success = False
@@ -73,13 +72,66 @@ with col_right:
 
 st.markdown("---")
 
+# --- 📈 證交所官方開放資料：籌碼雷達引擎 ---
+@st.cache_data(ttl=3600) # 快取 1 小時，避免重複抓取
+def fetch_twse_institutional_data():
+    """使用台灣證交所官方 Open Data API，免費、即時且絕對準確"""
+    try:
+        url = "https://openapi.twse.com.tw/v1/fund/T86_ALL"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+        chip_dict = {}
+        for item in data:
+            code = item.get("Code")
+            try:
+                # 取得外資與投信的買賣超股數 (去掉逗號轉數字)
+                fi_net = float(item.get("ForeignInvestorBuySellAmount", 0).replace(",", ""))
+                it_net = float(item.get("InvestmentTrustBuySellAmount", 0).replace(",", ""))
+            except:
+                fi_net, it_net = 0, 0
+
+            # 籌碼判斷標準 (100萬股 = 1000張)
+            threshold = 1000000
+            
+            if fi_net > threshold and it_net > threshold:
+                status = "🔥 外資投信聯手大買"
+            elif fi_net < -threshold and it_net < -threshold:
+                status = "🚨 外資投信聯手倒貨"
+            elif fi_net > threshold:
+                status = "📈 外資大量買進"
+            elif fi_net < -threshold:
+                status = "⚠️ 外資大量倒貨"
+            elif it_net > threshold:
+                status = "💎 投信大量買進"
+            elif it_net < -threshold:
+                status = "⚠️ 投信大量倒貨"
+            elif fi_net > 0 and it_net > 0:
+                status = "🟢 雙重偏多"
+            elif fi_net < 0 and it_net < 0:
+                status = "🔴 雙重偏空"
+            elif fi_net > 0:
+                status = "外資買超"
+            elif fi_net < 0:
+                status = "外資賣超"
+            else:
+                status = "➖ 籌碼中性"
+            
+            chip_dict[code] = status
+        return chip_dict
+    except:
+        return {}
+
+# 啟動並獲取官方籌碼資料
+chip_data_map = fetch_twse_institutional_data()
+
 # --- 📝 專屬自訂名稱字典 ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
     "00692.TW": "富邦公司治理",
     "00713.TW": "元大台灣高息低波",
-    "4958.TW": "臻鼎-KY"
+    "4958.TW": "臻鼎-KY",
+    "3037.TW": "四欣技" 
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -87,7 +139,7 @@ STOCK_UNIVERSE = {
     "半導體": {
         "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
         "3034.TW": "聯詠", "2379.TW": "瑞昱", "3661.TW": "世芯-KY", "8046.TW": "南電", 
-        "3037.TW": "欣興", "5347.TW": "世界先進", "6239.TW": "力成", "3131.TW": "弘塑"
+        "3037.TW": "四欣技", "5347.TWO": "世界先進", "6239.TW": "力成", "3131.TWO": "弘塑"
     },
     "光電與面板": {
         "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光"
@@ -134,7 +186,7 @@ manual_tickers_str = st.sidebar.text_input(
 )
 
 # --- 🧠 3. 核心運算引擎 ---
-@st.cache_data(ttl=30) 
+@st.cache_data(ttl=60) 
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
     tickers_to_fetch = {}
     
@@ -167,6 +219,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
         try:
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
+            
             if name == "自選標的":
                 if ticker in CUSTOM_NAME_MAP: name = CUSTOM_NAME_MAP[ticker]
                 else:
@@ -217,29 +270,28 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             px_up = close_px > prev_px               
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
-            # 🔥 這裡修復了剛才的語法錯誤
-            if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列 (強勢)" 
-            elif ma60 > 0 and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列 (極弱)" 
-            elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線 (波段看多)" 
-            elif ma60 == 0: trend_status = "📈 數據不足 (新股觀察)"
-            else: trend_status = "🔽 跌破季線 (波段防守)" 
+            if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列" 
+            elif ma60 > 0 and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列" 
+            elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
+            elif ma60 == 0: trend_status = "📈 新股觀察"
+            else: trend_status = "🔽 跌破季線" 
 
             if current_type == "ETF" or (is_manual and ticker.replace(".TW","").replace(".TWO","").startswith("00")):
-                if trend_status in ["🔽 跌破季線 (波段防守)", "🧊 空頭排列 (極弱)"] and bias < -10:
-                    note = "💎 跌深超賣！殖利率浮現，絕佳抄底時機"
-                elif trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
-                    note = "🟢 趨勢向上，適合分批布局"
-                else: note = "⚪ 進入整理，建議保持觀望"
+                if trend_status in ["🔽 跌破季線", "🧊 空頭排列"] and bias < -10:
+                    note = "💎 跌深殖利率浮現，可抄底"
+                elif trend_status in ["🔥 多頭排列", "🔼 站上季線"]:
+                    note = "🟢 趨勢向上，適合佈局"
+                else: note = "⚪ 進入整理，保持觀望"
             else:
-                if vol_surge and px_up: note = "🐋 疑似大戶進場，強勢表態！"
-                elif vol_surge and not px_up: note = "🚨 疑似大戶倒貨，控管風險！"
-                elif px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]: note = "🟢 趨勢強勢，可關注布局"
-                elif px_up: note = "🟡 溫和上漲，不宜追高"
-                else: note = "⚪ 量縮回檔，觀察支撐"
+                if vol_surge and px_up: note = "🐋 疑似大戶進場！"
+                elif vol_surge and not px_up: note = "🚨 疑似倒貨，控管風險！"
+                elif px_up and trend_status in ["🔥 多頭排列", "🔼 站上季線"]: note = "🟢 趨勢強勢"
+                elif px_up: note = "🟡 溫和上漲"
+                else: note = "⚪ 量縮回檔"
                 
-            if bias > 20: note = "🔥 乖離率過高，請留意獲利了結"
+            if bias > 20: note = "🔥 短線過熱，留意獲利了結"
 
-            # K棒型態辨識引擎
+            # K棒型態辨識
             try:
                 O = float(hist['Open'].iloc[-1])
                 H = max(float(hist['High'].iloc[-1]), close_px)
@@ -251,26 +303,31 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 dn_shadow = min(O, C) - L
                 tr = H - L
 
-                k_msg = "➖ 不明顯"
+                k_msg = "➖"
                 if tr > 0:
                     if body / tr >= 0.6:
-                        if C >= O: k_msg = "🚀 看漲"
-                        else: k_msg = "🔻 看跌"
+                        if C >= O: k_msg = "🚀 紅K"
+                        else: k_msg = "🔻 黑K"
                     elif up_shadow > body * 1.5 and up_shadow > dn_shadow * 1.5:
-                        k_msg = "⚠️ 可能轉弱"
+                        k_msg = "⚠️ 長上影線"
                     elif dn_shadow > body * 1.5 and dn_shadow > up_shadow * 1.5:
-                        k_msg = "💡 可能轉強"
+                        k_msg = "💡 長下影線"
                 note = f"[{k_msg}] {note}"
             except: pass
+
+            # 🔥 將官方籌碼對應至個股
+            code_only = ticker.replace(".TW", "").replace(".TWO","")
+            current_chip = chip_data_map.get(code_only, "➖ 上櫃/暫無")
 
             results.append({
                 "is_manual": is_manual,
                 "原始代號": ticker,  
-                "代號": ticker.replace(".TW", "").replace(".TWO",""), 
+                "代號": code_only, 
                 "名稱": name,
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
+                "📊 官方籌碼": current_chip,  # 新增籌碼欄位
                 "🤖 系統建議": note,
                 "Yahoo配息": yahoo_div_info 
             })
@@ -283,13 +340,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     return df 
 
 # --- 📊 4. 畫面渲染 ---
-st.subheader(f"🔍 觀察雷達 (最高價 {max_price} 元以下)")
+st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
 
-with st.spinner("真實證券報價與配息資料同步中..."):
+with st.spinner("真實證券報價、官方籌碼與配息資料同步中..."):
     final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
 
 if not final_data.empty:
-    # 建立配息覆寫邏輯
     def assign_final_dividend(row):
         t_key = row['原始代號']
         if t_key in st.session_state.app_data["custom_div_map"]:
@@ -298,35 +354,35 @@ if not final_data.empty:
 
     final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
     
-    # 動態對照硬碟記憶，生出「📌 持有」的布林值欄位
     held_list = st.session_state.app_data.get("held_stocks", [])
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 重新排列欄位，依照持有狀態排序
-    display_df = final_data[['📌 持有', '原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    # 重新排列欄位，把籌碼面拉到顯眼的位置
+    display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 啟動試算表編輯器
+    # 啟動 PRO 級試算表編輯器
     edited_df = st.data_editor(
         display_df,
         key="portfolio_editor", 
         hide_index=True,
         use_container_width=False, 
-        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], # 📌 持有 與 💰 最新配息 開放編輯
+        # 鎖定報價與抓下來的官方籌碼，保留持股、成交量與配息的手動修改權限
+        disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", help="勾選代表持有該標的，將優先置頂"),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的"),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 官方籌碼 (盤後同步)"),
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
-            "成交量(張)": st.column_config.NumberColumn("成交量"),
+            "成交量(張)": st.column_config.NumberColumn("成交量(張) (✎ 手動覆寫真實量)"),
             "趨勢格局": st.column_config.TextColumn("趨勢格局"),
             "💰 最新配息": st.column_config.TextColumn("💰 最新配息 (✎ 雙擊修改)") 
         }
     )
 
-    # 終極攔截器：同時偵測「勾選持有」與「修改配息」
     if "portfolio_editor" in st.session_state:
         edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
         if edited_rows:
@@ -337,7 +393,6 @@ if not final_data.empty:
                 row_idx = int(str_idx)
                 ticker_key = display_df.iloc[row_idx]['原始代號']
                 
-                # 1. 如果修改了「📌 持有」狀態
                 if "📌 持有" in changes:
                     is_checked = changes["📌 持有"]
                     if is_checked and (ticker_key not in current_held):
@@ -347,7 +402,6 @@ if not final_data.empty:
                     st.session_state.app_data["held_stocks"] = current_held
                     has_changes = True
                 
-                # 2. 如果修改了「💰 最新配息」
                 if "💰 最新配息" in changes:
                     new_val = changes["💰 最新配息"]
                     st.session_state.app_data["custom_div_map"][ticker_key] = new_val
