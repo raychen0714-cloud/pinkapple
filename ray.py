@@ -5,6 +5,7 @@ import numpy as np
 import json
 import os
 import requests
+import xml.etree.ElementTree as ET # 🔥 新增：用來解析即時新聞的內建套件
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
@@ -72,6 +73,25 @@ with col_right:
 
 st.markdown("---")
 
+# --- 📰 即時新聞攔截引擎 (完全免費) ---
+@st.cache_data(ttl=1800) # 每半小時自動更新一次新聞
+def fetch_realtime_news(keyword):
+    """利用 Google 新聞 RSS 抓取指定關鍵字的最新動態"""
+    try:
+        url = f"https://news.google.com/rss/search?q={keyword}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        res = requests.get(url, timeout=5)
+        root = ET.fromstring(res.content)
+        news_list = []
+        for item in root.findall('.//channel/item')[:5]: # 只取最新前 5 則
+            title = item.find('title').text
+            link = item.find('link').text
+            # 簡單清理新聞標題後面的媒體名稱 (例如 " - Yahoo奇摩股市")
+            clean_title = title.rsplit(" - ", 1)[0] 
+            news_list.append({"title": clean_title, "link": link})
+        return news_list
+    except:
+        return [{"title": "目前無法獲取新聞，請稍後再試", "link": "#"}]
+
 # --- 📈 證交所官方開放資料：籌碼雷達引擎 ---
 @st.cache_data(ttl=3600)
 def fetch_twse_institutional_data():
@@ -89,29 +109,17 @@ def fetch_twse_institutional_data():
                 fi_net, it_net = 0, 0
 
             threshold = 1000000
-            
-            if fi_net > threshold and it_net > threshold:
-                status = "🔥 外資投信聯手大買"
-            elif fi_net < -threshold and it_net < -threshold:
-                status = "🚨 外資投信聯手倒貨"
-            elif fi_net > threshold:
-                status = "📈 外資大量買進"
-            elif fi_net < -threshold:
-                status = "⚠️ 外資大量倒貨"
-            elif it_net > threshold:
-                status = "💎 投信大量買進"
-            elif it_net < -threshold:
-                status = "⚠️ 投信大量倒貨"
-            elif fi_net > 0 and it_net > 0:
-                status = "🟢 雙重偏多"
-            elif fi_net < 0 and it_net < 0:
-                status = "🔴 雙重偏空"
-            elif fi_net > 0:
-                status = "外資買超"
-            elif fi_net < 0:
-                status = "外資賣超"
-            else:
-                status = "➖ 籌碼中性"
+            if fi_net > threshold and it_net > threshold: status = "🔥 外資投信聯手大買"
+            elif fi_net < -threshold and it_net < -threshold: status = "🚨 外資投信聯手倒貨"
+            elif fi_net > threshold: status = "📈 外資大量買進"
+            elif fi_net < -threshold: status = "⚠️ 外資大量倒貨"
+            elif it_net > threshold: status = "💎 投信大量買進"
+            elif it_net < -threshold: status = "⚠️ 投信大量倒貨"
+            elif fi_net > 0 and it_net > 0: status = "🟢 雙重偏多"
+            elif fi_net < 0 and it_net < 0: status = "🔴 雙重偏空"
+            elif fi_net > 0: status = "外資買超"
+            elif fi_net < 0: status = "外資賣超"
+            else: status = "➖ 籌碼中性"
             
             chip_dict[code] = status
         return chip_dict
@@ -287,18 +295,15 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             if bias > 20: note = "🔥 短線過熱，留意獲利了結"
 
-            # K棒型態辨識
             try:
                 O = float(hist['Open'].iloc[-1])
                 H = max(float(hist['High'].iloc[-1]), close_px)
                 L = min(float(hist['Low'].iloc[-1]), close_px)
                 C = close_px
-
                 body = abs(C - O)
                 up_shadow = H - max(O, C)
                 dn_shadow = min(O, C) - L
                 tr = H - L
-
                 k_msg = "➖"
                 if tr > 0:
                     if body / tr >= 0.6:
@@ -322,109 +327,4 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "📊 官方籌碼": current_chip,  
-                "🤖 系統建議": note,
-                "Yahoo配息": yahoo_div_info 
-            })
-        except: continue
-            
-    df = pd.DataFrame(results)
-    if not df.empty:
-        df = df.sort_values(by=["成交量(張)"], ascending=[False])
-        df.reset_index(drop=True, inplace=True)
-    return df 
-
-# --- 📊 4. 畫面渲染 ---
-# 🔥🔥🔥 修正版：K線型態對照表 (看盤速查秘笈) 🔥🔥🔥
-with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
-    c_k1, c_k2, c_k3, c_k4 = st.columns(4)
-    with c_k1:
-        st.markdown("### 🚀 紅K (看漲)")
-        st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-        st.caption("實體佔整根K棒 60% 以上。代表買方力道極度強勁，多頭全面控盤！")
-    with c_k2:
-        st.markdown("### 🔻 黑K (看跌)")
-        st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-        st.caption("實體佔整根K棒 60% 以上。代表賣方賣壓沉重，空方強勢表態！")
-    with c_k3:
-        st.markdown("### ⚠️ 上影線 (可能轉弱)")
-        # 正確的上影線：細線在上，實體在下
-        st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
-        st.caption("上影線長度大於實體 1.5 倍。代表高檔遭遇強力反撲，注意主力倒貨拉回。")
-    with c_k4:
-        st.markdown("### 💡 下影線 (可能轉強)")
-        # 正確的下影線：實體在上，細線在下
-        st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
-        st.caption("下影線長度大於實體 1.5 倍。代表下方買盤支撐強烈，低檔有大戶進場護盤。")
-
-st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
-
-with st.spinner("真實證券報價、官方籌碼與配息資料同步中..."):
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
-
-if not final_data.empty:
-    def assign_final_dividend(row):
-        t_key = row['原始代號']
-        if t_key in st.session_state.app_data["custom_div_map"]:
-            return st.session_state.app_data["custom_div_map"][t_key]
-        return row['Yahoo配息']
-
-    final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
-    
-    held_list = st.session_state.app_data.get("held_stocks", [])
-    final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
-    final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
-    
-    display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
-    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
-    
-    edited_df = st.data_editor(
-        display_df,
-        key="portfolio_editor", 
-        hide_index=True,
-        use_container_width=False, 
-        disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
-        column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
-            "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 官方籌碼 (盤後同步)"),
-            "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
-            "現價": st.column_config.NumberColumn("現價"),
-            "成交量(張)": st.column_config.NumberColumn("成交量(張) (✎ 手動覆寫真實量)"),
-            "趨勢格局": st.column_config.TextColumn("趨勢格局"),
-            "💰 最新配息": st.column_config.TextColumn("💰 最新配息 (✎ 雙擊修改)") 
-        }
-    )
-
-    if "portfolio_editor" in st.session_state:
-        edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
-        if edited_rows:
-            has_changes = False
-            current_held = st.session_state.app_data.get("held_stocks", [])
-            
-            for str_idx, changes in edited_rows.items():
-                row_idx = int(str_idx)
-                ticker_key = display_df.iloc[row_idx]['原始代號']
-                
-                if "📌 持有" in changes:
-                    is_checked = changes["📌 持有"]
-                    if is_checked and (ticker_key not in current_held):
-                        current_held.append(ticker_key)
-                    elif (not is_checked) and (ticker_key in current_held):
-                        current_held.remove(ticker_key)
-                    st.session_state.app_data["held_stocks"] = current_held
-                    has_changes = True
-                
-                if "💰 最新配息" in changes:
-                    new_val = changes["💰 最新配息"]
-                    st.session_state.app_data["custom_div_map"][ticker_key] = new_val
-                    has_changes = True
-                    
-            if has_changes:
-                save_data(st.session_state.app_data)       
-                st.session_state.show_save_success = True  
-                st.rerun()                                 
-
-else:
-    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
+                "📊 官方籌
