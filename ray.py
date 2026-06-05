@@ -330,17 +330,25 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             code_only = ticker.replace(".TW", "").replace(".TWO","")
             current_chip = chip_data_map.get(code_only, "➖ 上櫃/暫無")
 
+            # 【覆蓋此區塊】計算漲跌幅並寫入
+            try:
+                prev_close = float(hist['Close'].iloc[-2])
+                price_change_pct = ((close_px - prev_close) / prev_close) * 100
+            except:
+                price_change_pct = 0.0
+
             results.append({
                 "is_manual": is_manual,
                 "原始代號": ticker,  
-                "代號": code_only, 
+                "代號": ticker.replace(".TW","").replace(".TWO",""), 
                 "名稱": name,
                 "現價": round(close_px, 2), 
+                "漲跌幅": round(price_change_pct, 2),  # 【新增欄位】
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "📊 官方籌碼": current_chip,  
+                "📊 官方籌碼": chip_data_map.get(ticker.replace(".TW","").replace(".TWO",""), "➖"),  
                 "🤖 系統建議": note,
-                "Yahoo配息": yahoo_div_info 
+                "💰 最新配息": yahoo_div_info 
             })
         except: continue
             
