@@ -6,10 +6,12 @@ import json
 import os
 
 # --- ⚙️ 頁面與效能設定 ---
-st.set_page_config(page_title="戰情室", layout="wide")
+st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 (寫入本機檔案) ---
-DATA_FILE = "user_data.json"
+# --- 💾 永久記憶系統 (絕對路徑鎖死版) ---
+# 🔥 終極解法：強制抓取 ray.py 所在的資料夾，把存檔跟程式永遠綁定在一起！
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -32,13 +34,13 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# 顯示儲存成功的提示小工具
+# 顯示儲存成功的提示小工具 (Toast)
 if st.session_state.get("show_save_success", False):
     st.toast("💾 配息資料已成功更新並永久儲存！", icon="✅")
     st.session_state.show_save_success = False
 
-# --- 💰 存股配息金庫 (全新頂部 UI) ---
-st.markdown("### 💰 存股配息金庫")
+# --- 💰 存股配息金庫 (頂部 UI) ---
+st.markdown("### 💰 PRO 級存股配息金庫")
 col_left, col_right = st.columns(2)
 
 with col_left:
@@ -70,7 +72,7 @@ with col_right:
 
 st.markdown("---")
 
-# --- 📝 專屬自訂名稱字典 ---
+# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 英文亂碼) ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
@@ -114,6 +116,7 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
+# 讀取永久記憶的最高價位
 current_max = st.session_state.app_data.get("max_price", 1000)
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10)
 
@@ -122,7 +125,7 @@ if max_price != current_max:
     save_data(st.session_state.app_data)
 
 st.sidebar.markdown("---")
-only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏上方系統清單)", value=False)
+only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
 
 manual_tickers_str = st.sidebar.text_input(
     "🔍 4. 手動新增觀察標的", 
@@ -252,6 +255,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     if not df.empty:
         df = df.sort_values(by=["is_manual", "成交量(張)"], ascending=[False, False])
         df = df.drop(columns=["is_manual"])
+        df.reset_index(drop=True, inplace=True)
     return df 
 
 # --- 📊 4. 畫面渲染 ---
@@ -272,15 +276,15 @@ if not final_data.empty:
     
     display_df = final_data[['原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     
-    # 🔥 加上絕對鎖定 key="portfolio_editor" 終結失憶症！
+    # 🔥 PRO 級試算表編輯器：鎖定狀態，完美儲存
     st.data_editor(
         display_df,
-        key="portfolio_editor",
+        key="portfolio_editor", # 絕對鎖定金鑰
         hide_index=True,
         use_container_width=False, 
-        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], 
+        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], # 防止誤改報價
         column_config={
-            "原始代號": None, 
+            "原始代號": None, # 隱藏內部對照用的代碼
             "標的": st.column_config.TextColumn("標的"),
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
@@ -290,7 +294,7 @@ if not final_data.empty:
         }
     )
 
-    # 🔥 偵測編輯：攔截任何修改並第一時間寫入硬碟！
+    # 🔥 終極防失憶攔截器：只要表格被修改，第一時間強制寫入 JSON 硬碟！
     if "portfolio_editor" in st.session_state:
         edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
         if edited_rows:
@@ -300,19 +304,13 @@ if not final_data.empty:
                 if "💰 最新配息" in changes:
                     new_val = changes["💰 最新配息"]
                     ticker_key = display_df.iloc[row_idx]['原始代號']
-                    # 覆寫記憶
                     st.session_state.app_data["custom_div_map"][ticker_key] = new_val
                     has_changes = True
                     
             if has_changes:
-                # 1. 寫入硬碟鎖死
-                save_data(st.session_state.app_data)
-                # 2. 設定成功提示標籤
-                st.session_state.show_save_success = True
-                # 3. 刪除編輯器的暫存狀態，避免下次錯亂
-                del st.session_state["portfolio_editor"]
-                # 4. 強制刷新畫面
-                st.rerun()
+                save_data(st.session_state.app_data)       # 寫入絕對路徑硬碟
+                st.session_state.show_save_success = True  # 觸發綠色勾勾提示
+                st.rerun()                                 # 瞬間刷新，鎖死數據
 
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
