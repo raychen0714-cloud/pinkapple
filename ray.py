@@ -464,7 +464,7 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表 (優化欄寬，消除多餘空白)
+    # 3. 顯示帶有顏色的 PRO 試算表 (🔥🔥🔥 終極排版比例修正 🔥🔥🔥)
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
@@ -475,12 +475,12 @@ if not final_data.empty:
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width="medium"),
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"), # 限制寬度
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 留足夠空間顯示 "% / 點數"
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"), # 限制寬度
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 讓它變 medium，吸收並填滿多餘空白
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"),
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), # 🔥 關鍵：設為 large 吸收多餘空白
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="medium"), # 🔥 關鍵：放大成 medium，字就不會再擠成一團
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), 
             "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium")
         }
     )
