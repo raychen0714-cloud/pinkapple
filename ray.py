@@ -26,7 +26,8 @@ def load_data():
             "00918.TW": "1.26元",
             "0056.TW": "1.0元" 
         },
-        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"]
+        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
     }
 
 def save_data(data):
@@ -73,7 +74,7 @@ with col_right:
 
 st.markdown("---")
 
-# --- 📰 即時新聞攔截引擎 (完全免費) ---
+# --- 📰 即時新聞攔截引擎 ---
 @st.cache_data(ttl=1800)
 def fetch_realtime_news(keyword):
     try:
@@ -133,7 +134,8 @@ CUSTOM_NAME_MAP = {
     "00692.TW": "富邦公司治理",
     "00713.TW": "元大台灣高息低波",
     "4958.TW": "臻鼎-KY",
-    "3037.TW": "四欣技"
+    "3037.TW": "四欣技",
+    "3481.TW": "群創"
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -181,22 +183,18 @@ if max_price != current_max:
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
 
-# --- 修正後的「手動新增觀察標的」區塊 ---
-# 1. 先從永久儲存區讀取清單，沒有的話才用預設值
+# 🔥🔥🔥 修正：手動清單綁定記憶庫，保證不消失 🔥🔥🔥
 saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116")
-
-# 2. 建立輸入框，並將 value 指向讀取到的清單
 manual_tickers_str = st.sidebar.text_input(
-    "🔍 4. 手動新增觀察標的 (設定後會永久儲存)", 
+    "🔍 4. 手動新增觀察標的", 
     value=saved_tickers, 
     placeholder="如: 878, 56, 3481"
 )
 
-# 3. 偵測輸入變更，一旦改變就立即存檔
 if manual_tickers_str != saved_tickers:
     st.session_state.app_data["manual_tickers"] = manual_tickers_str
     save_data(st.session_state.app_data)
-    st.rerun() # 自動重整以更新報表
+    st.rerun()
 
 # --- 🧠 3. 核心運算引擎 ---
 @st.cache_data(ttl=60) 
@@ -270,7 +268,20 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             except: close_px = float(hist['Close'].iloc[-1])
                 
             if not is_manual and close_px > price_limit: continue
-            prev_px = float(hist['Close'].iloc[-2])
+            
+            # 🔥🔥🔥 新增：精準計算今日漲跌幅 🔥🔥🔥
+            try:
+                prev_close = float(hist['Close'].iloc[-2])
+                price_change_pct = ((close_px - prev_close) / prev_close) * 100
+                if price_change_pct > 0:
+                    change_str = f"🔺 +{price_change_pct:.2f}%"
+                elif price_change_pct < 0:
+                    change_str = f"🔻 {price_change_pct:.2f}%"
+                else:
+                    change_str = "➖ 0.00%"
+            except:
+                change_str = "➖ 0.00%"
+
             vol = float(hist['Volume'].iloc[-1]) / 1000  
             if not is_manual and vol < 1000 and current_type == "個股": continue 
 
@@ -280,7 +291,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
             bias = ((close_px - ma20) / ma20) * 100  
-            px_up = close_px > prev_px               
+            px_up = close_px > prev_close               
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
             if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列" 
@@ -336,6 +347,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "代號": code_only, 
                 "名稱": name,
                 "現價": round(close_px, 2), 
+                "📈 漲跌": change_str, # 🔥 寫入漲跌幅欄位
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
                 "📊 官方籌碼": current_chip,  
@@ -354,7 +366,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 col_menu1, col_menu2 = st.columns(2)
 
 with col_menu1:
-    # 🔥🔥🔥 終極完整版：K線型態速查對照表 (K線六式) 🔥🔥🔥
     with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
         st.markdown("#### 第一組：明確趨勢 (實體為主)")
         c1, c2, c3, c4 = st.columns(4)
@@ -432,26 +443,27 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
+    # 🔥🔥🔥 修正：優化並縮短欄位，加入漲跌幅顯示 🔥🔥🔥
+    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 啟動 PRO 級試算表編輯器 (優化版)
     edited_df = st.data_editor(
         display_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=True, # 改為 True，讓它自動適應螢幕寬度
-        disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
+        use_container_width=True, 
+        disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width="medium"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"), # 縮短標題
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), # 縮短標題
-            "現價": st.column_config.NumberColumn("現價", width="small"),
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"), # 砍掉長備註
-            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), # 縮短標題
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 縮短標題
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"),
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"),
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"),
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="small")
         }
     )
 
