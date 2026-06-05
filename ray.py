@@ -343,24 +343,42 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 col_menu1, col_menu2 = st.columns(2)
 
 with col_menu1:
-    with st.expander("📊 K線型態速查對照表", expanded=False):
-        c_k1, c_k2, c_k3, c_k4 = st.columns(4)
-        with c_k1:
-            st.markdown("### 🚀 紅K")
-            st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("多頭全面控盤")
-        with c_k2:
-            st.markdown("### 🔻 黑K")
-            st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("空方強勢表態")
-        with c_k3:
-            st.markdown("### ⚠️ 上影線")
-            st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("高檔遭遇反撲")
-        with c_k4:
-            st.markdown("### 💡 下影線")
-            st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("低檔買盤護盤")
+    # 🔥🔥🔥 終極完整版：K線型態速查對照表 (K線六式) 🔥🔥🔥
+with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
+    st.markdown("#### 第一組：明確趨勢 (實體為主)")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown("### 🚀 純紅K (極強)")
+        st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：順勢買進或續抱。多頭全面控盤！")
+    with c2:
+        st.markdown("### 🔻 純綠K (極弱)")
+        st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：避開或減碼。空方強勢表態！")
+
+    st.markdown("---")
+    st.markdown("#### 第二組：高檔遇壓 (上影線系列)")
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
+        st.markdown("### ⚠️ 紅上影 (警戒)")
+        st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：暫時續抱但不追高。有賣壓但多方仍守住底線。")
+    with c6:
+        st.markdown("### ☠️ 綠上影 (快逃)")
+        st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：強烈建議減碼。賣壓極重，多軍徹底潰敗。")
+
+    st.markdown("---")
+    st.markdown("#### 第三組：低檔有撐 (下影線系列)")
+    c9, c10, c11, c12 = st.columns(4)
+    with c9:
+        st.markdown("### 💡 紅下影 (極吉)")
+        st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：逢低買進或抱緊。買盤超強，大戶進場掃貨。")
+    with c10:
+        st.markdown("### 🛡️ 綠下影 (止跌)")
+        st.markdown("<div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：切勿恐慌殺低。有鐵板護盤，等待明日反彈確認。")
 
 with col_menu2:
     # 🔥🔥🔥 全新：國際財經與大老動態 (即時新聞) 🔥🔥🔥
