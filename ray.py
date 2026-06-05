@@ -9,7 +9,6 @@ import os
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
 # --- 💾 永久記憶系統 (絕對路徑鎖死版) ---
-# 🔥 終極解法：強制抓取 ray.py 所在的資料夾，把存檔跟程式永遠綁定在一起！
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
@@ -34,12 +33,11 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# 顯示儲存成功的提示小工具 (Toast)
 if st.session_state.get("show_save_success", False):
     st.toast("💾 配息資料已成功更新並永久儲存！", icon="✅")
     st.session_state.show_save_success = False
 
-# --- 💰 存股配息金庫 (頂部 UI) ---
+# --- 💰 存股配息金庫 ---
 st.markdown("### 💰 PRO 級存股配息金庫")
 col_left, col_right = st.columns(2)
 
@@ -72,7 +70,7 @@ with col_right:
 
 st.markdown("---")
 
-# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 英文亂碼) ---
+# --- 📝 專屬自訂名稱字典 ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
@@ -116,7 +114,6 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
-# 讀取永久記憶的最高價位
 current_max = st.session_state.app_data.get("max_price", 1000)
 max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10)
 
@@ -225,19 +222,49 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 
             if current_type == "ETF" or (is_manual and ticker.replace(".TW","").replace(".TWO","").startswith("00")):
                 if trend_status in ["🔽 跌破季線 (波段防守)", "🧊 空頭排列 (極弱)"] and bias < -10:
-                    note = "💎 跌深超賣！殖利率浮現，絕佳抄底撿便宜時機！"
+                    note = "💎 跌深超賣！殖利率浮現，絕佳抄底時機"
                 elif trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]:
                     note = "🟢 趨勢向上，適合分批布局"
                 else: note = "⚪ 進入整理，建議保持觀望"
             else:
-                if vol_surge and px_up: note = "🐋 疑似大戶進場，強勢表態可跟進！"
-                elif vol_surge and not px_up: note = "🚨 疑似大戶倒貨，嚴格控管風險！"
-                elif px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]: note = "🟢 趨勢強勢，可積極關注布局"
-                elif px_up: note = "🟡 溫和上漲，可續抱，不宜追高"
-                else: note = "⚪ 量縮回檔，觀察支撐是否有效"
+                if vol_surge and px_up: note = "🐋 疑似大戶進場，強勢表態！"
+                elif vol_surge and not px_up: note = "🚨 疑似大戶倒貨，控管風險！"
+                elif px_up and trend_status in ["🔥 多頭排列 (強勢)", "🔼 站上季線 (波段看多)"]: note = "🟢 趨勢強勢，可關注布局"
+                elif px_up: note = "🟡 溫和上漲，不宜追高"
+                else: note = "⚪ 量縮回檔，觀察支撐"
                 
-            if bias > 20: note = "🔥 乖離率過高，短線極度過熱，請留意獲利了結"
+            if bias > 20: note = "🔥 乖離率過高，請留意獲利了結"
+
+            # 🔥🔥🔥 全新：K棒型態辨識引擎 🔥🔥🔥
+            try:
+                O = float(hist['Open'].iloc[-1])
+                H = max(float(hist['High'].iloc[-1]), close_px)
+                L = min(float(hist['Low'].iloc[-1]), close_px)
+                C = close_px
+
+                body = abs(C - O)
+                up_shadow = H - max(O, C)
+                dn_shadow = min(O, C) - L
+                tr = H - L
+
+                k_msg = "➖ 不明顯"
+                if tr > 0:
+                    # 實體佔比大於 60% 視為長紅/長綠K
+                    if body / tr >= 0.6:
+                        if C >= O: k_msg = "🚀 看漲"
+                        else: k_msg = "🔻 看跌"
+                    # 上影線大於實體1.5倍，且大於下影線1.5倍 視為轉弱
+                    elif up_shadow > body * 1.5 and up_shadow > dn_shadow * 1.5:
+                        k_msg = "⚠️ 可能轉弱"
+                    # 下影線大於實體1.5倍，且大於上影線1.5倍 視為轉強
+                    elif dn_shadow > body * 1.5 and dn_shadow > up_shadow * 1.5:
+                        k_msg = "💡 可能轉強"
                 
+                # 將 K 棒判定加入建議最前方
+                note = f"[{k_msg}] {note}"
+            except:
+                pass # 防呆機制，若當日無高低價資料則略過 K 線運算
+
             results.append({
                 "is_manual": is_manual,
                 "原始代號": ticker,  
@@ -276,15 +303,14 @@ if not final_data.empty:
     
     display_df = final_data[['原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     
-    # 🔥 PRO 級試算表編輯器：鎖定狀態，完美儲存
     st.data_editor(
         display_df,
-        key="portfolio_editor", # 絕對鎖定金鑰
+        key="portfolio_editor", 
         hide_index=True,
         use_container_width=False, 
-        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], # 防止誤改報價
+        disabled=["標的", "🤖 系統建議", "現價", "成交量(張)", "趨勢格局"], 
         column_config={
-            "原始代號": None, # 隱藏內部對照用的代碼
+            "原始代號": None, 
             "標的": st.column_config.TextColumn("標的"),
             "🤖 系統建議": st.column_config.TextColumn("🤖 系統建議"), 
             "現價": st.column_config.NumberColumn("現價"),
@@ -294,7 +320,6 @@ if not final_data.empty:
         }
     )
 
-    # 🔥 終極防失憶攔截器：只要表格被修改，第一時間強制寫入 JSON 硬碟！
     if "portfolio_editor" in st.session_state:
         edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
         if edited_rows:
@@ -308,9 +333,9 @@ if not final_data.empty:
                     has_changes = True
                     
             if has_changes:
-                save_data(st.session_state.app_data)       # 寫入絕對路徑硬碟
-                st.session_state.show_save_success = True  # 觸發綠色勾勾提示
-                st.rerun()                                 # 瞬間刷新，鎖死數據
+                save_data(st.session_state.app_data)       
+                st.session_state.show_save_success = True  
+                st.rerun()                                 
 
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
