@@ -335,24 +335,26 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     return df 
 
 # --- 📊 4. 畫面渲染 ---
-# 🔥🔥🔥 全新：K線型態對照表 (看盤速查秘笈) 🔥🔥🔥
+# 🔥🔥🔥 修正版：K線型態對照表 (看盤速查秘笈) 🔥🔥🔥
 with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
     c_k1, c_k2, c_k3, c_k4 = st.columns(4)
     with c_k1:
         st.markdown("### 🚀 紅K (看漲)")
-        st.markdown("<div style='background-color:#E53E3E; width:30px; height:60px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
         st.caption("實體佔整根K棒 60% 以上。代表買方力道極度強勁，多頭全面控盤！")
     with c_k2:
         st.markdown("### 🔻 黑K (看跌)")
-        st.markdown("<div style='background-color:#38A169; width:30px; height:60px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
         st.caption("實體佔整根K棒 60% 以上。代表賣方賣壓沉重，空方強勢表態！")
     with c_k3:
         st.markdown("### ⚠️ 上影線 (可能轉弱)")
-        st.markdown("<div style='text-align:center; font-size:35px; line-height:1;'>⫕<br>┃</div>", unsafe_allow_html=True)
+        # 正確的上影線：細線在上，實體在下
+        st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
         st.caption("上影線長度大於實體 1.5 倍。代表高檔遭遇強力反撲，注意主力倒貨拉回。")
     with c_k4:
         st.markdown("### 💡 下影線 (可能轉強)")
-        st.markdown("<div style='text-align:center; font-size:35px; line-height:1;'>┃<br>⫖</div>", unsafe_allow_html=True)
+        # 正確的下影線：實體在上，細線在下
+        st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
         st.caption("下影線長度大於實體 1.5 倍。代表下方買盤支撐強烈，低檔有大戶進場護盤。")
 
 st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
