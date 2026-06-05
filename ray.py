@@ -443,12 +443,28 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 🔥🔥🔥 修正：優化並縮短欄位，加入漲跌幅顯示 🔥🔥🔥
+    # 🔥🔥🔥 修正：優化欄位，加入漲跌幅「台股專屬」紅綠顏色顯示 🔥🔥🔥
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
+    # 1. 建立台股專屬顏色邏輯 (紅漲綠跌)
+    def color_tw_stock(val):
+        if isinstance(val, str):
+            if '🔺' in val:
+                return 'color: #ff4b4b; font-weight: bold;' # Streamlit 專屬紅色 + 粗體
+            elif '🔻' in val:
+                return 'color: #09ab3b; font-weight: bold;' # Streamlit 專屬綠色 + 粗體
+        return ''
+
+    # 2. 將顏色樣式套用到 DataFrame 的「📈 漲跌」這個欄位
+    if hasattr(display_df.style, "map"):
+        styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌'])
+    else:
+        styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
+    
+    # 3. 顯示帶有顏色的 PRO 試算表
     edited_df = st.data_editor(
-        display_df,
+        styled_df,  # 🔥 這裡把原本的 display_df 換成了帶有顏色的 styled_df
         key="portfolio_editor", 
         hide_index=True,
         use_container_width=True, 
