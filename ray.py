@@ -24,7 +24,7 @@ def load_data():
             "00918.TW": "1.26元",
             "0056.TW": "1.0元 (2026-04-23)" 
         },
-        # 🔥 預設幫你把核心持股設定為持有打勾狀態
+        # 🔥 預設核心持股
         "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"]
     }
 
@@ -73,7 +73,7 @@ with col_right:
 
 st.markdown("---")
 
-# --- 📝 專屬自訂名稱字典 (解決 Yahoo API 英文亂碼) ---
+# --- 📝 專屬自訂名稱字典 ---
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
@@ -217,8 +217,9 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             px_up = close_px > prev_px               
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
+            # 🔥 這裡修復了剛才的語法錯誤
             if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列 (強勢)" 
-            elif ma60 > 0 collector and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列 (極弱)" 
+            elif ma60 > 0 and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列 (極弱)" 
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線 (波段看多)" 
             elif ma60 == 0: trend_status = "📈 數據不足 (新股觀察)"
             else: trend_status = "🔽 跌破季線 (波段防守)" 
@@ -297,12 +298,12 @@ if not final_data.empty:
 
     final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
     
-    # 🔥 核心修正：動態對照硬碟記憶，生出「📌 持有」的布林值欄位
+    # 動態對照硬碟記憶，生出「📌 持有」的布林值欄位
     held_list = st.session_state.app_data.get("held_stocks", [])
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 重新排列欄位，將「📌 持有」放在最前面方便點擊，並且【依照持有狀態排序：有持有的(True)在上面，沒持有的(False)在下面】
+    # 重新排列欄位，依照持有狀態排序
     display_df = final_data[['📌 持有', '原始代號', '標的', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
@@ -325,7 +326,7 @@ if not final_data.empty:
         }
     )
 
-    # 🔥 終極攔截器：同時偵測「勾選持有」與「修改配息」，有任何變動秒速寫入硬碟
+    # 終極攔截器：同時偵測「勾選持有」與「修改配息」
     if "portfolio_editor" in st.session_state:
         edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
         if edited_rows:
