@@ -380,6 +380,18 @@ with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expande
         st.markdown("<div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
         st.caption("動作：切勿恐慌殺低。有鐵板護盤，等待明日反彈確認。")
 
+    st.markdown("---")
+    st.markdown("#### 第三組：低檔有撐 (下影線系列)")
+    c9, c10, c11, c12 = st.columns(4)
+    with c9:
+        st.markdown("### 💡 紅下影 (極吉)")
+        st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：逢低買進或抱緊。買盤超強，大戶進場掃貨。")
+    with c10:
+        st.markdown("### 🛡️ 綠下影 (止跌)")
+        st.markdown("<div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("動作：切勿恐慌殺低。有鐵板護盤，等待明日反彈確認。")
+
 with col_menu2:
     # 🔥🔥🔥 全新：國際財經與大老動態 (即時新聞) 🔥🔥🔥
     with st.expander("🌍 國際財經與大老動態 (即時新聞)", expanded=False):
