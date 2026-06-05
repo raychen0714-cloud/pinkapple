@@ -269,18 +269,20 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             if not is_manual and close_px > price_limit: continue
             
-            # 🔥🔥🔥 新增：精準計算今日漲跌幅 🔥🔥🔥
+            # 🔥🔥🔥 新增：精準計算今日漲跌幅與漲跌點數 🔥🔥🔥
             try:
                 prev_close = float(hist['Close'].iloc[-2])
-                price_change_pct = ((close_px - prev_close) / prev_close) * 100
-                if price_change_pct > 0:
-                    change_str = f"🔺 +{price_change_pct:.2f}%"
-                elif price_change_pct < 0:
-                    change_str = f"🔻 {price_change_pct:.2f}%"
+                price_change_abs = close_px - prev_close # 計算漲跌幾塊錢
+                price_change_pct = (price_change_abs / prev_close) * 100 # 計算漲跌幅
+                
+                if price_change_abs > 0:
+                    change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
+                elif price_change_abs < 0:
+                    change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}"
                 else:
-                    change_str = "➖ 0.00%"
+                    change_str = "➖ 0.00% / 0.00"
             except:
-                change_str = "➖ 0.00%"
+                change_str = "➖ 0.00% / 0.00"
 
             vol = float(hist['Volume'].iloc[-1]) / 1000  
             if not is_manual and vol < 1000 and current_type == "個股": continue 
@@ -462,9 +464,9 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表
+    # 3. 顯示帶有顏色的 PRO 試算表 (優化欄寬，消除多餘空白)
     edited_df = st.data_editor(
-        styled_df,  # 🔥 這裡把原本的 display_df 換成了帶有顏色的 styled_df
+        styled_df,
         key="portfolio_editor", 
         hide_index=True,
         use_container_width=True, 
@@ -473,13 +475,13 @@ if not final_data.empty:
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width="medium"),
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"),
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"), # 限制寬度
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 留足夠空間顯示 "% / 點數"
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"), # 限制寬度
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
             "趨勢格局": st.column_config.TextColumn("趨勢", width="small"),
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"),
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="small")
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), # 🔥 關鍵：設為 large 吸收多餘空白
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium")
         }
     )
 
