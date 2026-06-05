@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
-import requests # 🔥 新增：用來抓取證交所官方資料的模組
+import requests
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
@@ -73,9 +73,8 @@ with col_right:
 st.markdown("---")
 
 # --- 📈 證交所官方開放資料：籌碼雷達引擎 ---
-@st.cache_data(ttl=3600) # 快取 1 小時，避免重複抓取
+@st.cache_data(ttl=3600)
 def fetch_twse_institutional_data():
-    """使用台灣證交所官方 Open Data API，免費、即時且絕對準確"""
     try:
         url = "https://openapi.twse.com.tw/v1/fund/T86_ALL"
         res = requests.get(url, timeout=5)
@@ -84,13 +83,11 @@ def fetch_twse_institutional_data():
         for item in data:
             code = item.get("Code")
             try:
-                # 取得外資與投信的買賣超股數 (去掉逗號轉數字)
                 fi_net = float(item.get("ForeignInvestorBuySellAmount", 0).replace(",", ""))
                 it_net = float(item.get("InvestmentTrustBuySellAmount", 0).replace(",", ""))
             except:
                 fi_net, it_net = 0, 0
 
-            # 籌碼判斷標準 (100萬股 = 1000張)
             threshold = 1000000
             
             if fi_net > threshold and it_net > threshold:
@@ -121,7 +118,6 @@ def fetch_twse_institutional_data():
     except:
         return {}
 
-# 啟動並獲取官方籌碼資料
 chip_data_map = fetch_twse_institutional_data()
 
 # --- 📝 專屬自訂名稱字典 ---
@@ -131,7 +127,7 @@ CUSTOM_NAME_MAP = {
     "00692.TW": "富邦公司治理",
     "00713.TW": "元大台灣高息低波",
     "4958.TW": "臻鼎-KY",
-    "3037.TW": "四欣技" 
+    "3037.TW": "四欣技"
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -309,13 +305,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                         if C >= O: k_msg = "🚀 紅K"
                         else: k_msg = "🔻 黑K"
                     elif up_shadow > body * 1.5 and up_shadow > dn_shadow * 1.5:
-                        k_msg = "⚠️ 長上影線"
+                        k_msg = "⚠️ 上影線"
                     elif dn_shadow > body * 1.5 and dn_shadow > up_shadow * 1.5:
-                        k_msg = "💡 長下影線"
+                        k_msg = "💡 下影線"
                 note = f"[{k_msg}] {note}"
             except: pass
 
-            # 🔥 將官方籌碼對應至個股
             code_only = ticker.replace(".TW", "").replace(".TWO","")
             current_chip = chip_data_map.get(code_only, "➖ 上櫃/暫無")
 
@@ -327,7 +322,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "現價": round(close_px, 2), 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
-                "📊 官方籌碼": current_chip,  # 新增籌碼欄位
+                "📊 官方籌碼": current_chip,  
                 "🤖 系統建議": note,
                 "Yahoo配息": yahoo_div_info 
             })
@@ -340,6 +335,26 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
     return df 
 
 # --- 📊 4. 畫面渲染 ---
+# 🔥🔥🔥 全新：K線型態對照表 (看盤速查秘笈) 🔥🔥🔥
+with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
+    c_k1, c_k2, c_k3, c_k4 = st.columns(4)
+    with c_k1:
+        st.markdown("### 🚀 紅K (看漲)")
+        st.markdown("<div style='background-color:#E53E3E; width:30px; height:60px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("實體佔整根K棒 60% 以上。代表買方力道極度強勁，多頭全面控盤！")
+    with c_k2:
+        st.markdown("### 🔻 黑K (看跌)")
+        st.markdown("<div style='background-color:#38A169; width:30px; height:60px; margin:auto;'></div>", unsafe_allow_html=True)
+        st.caption("實體佔整根K棒 60% 以上。代表賣方賣壓沉重，空方強勢表態！")
+    with c_k3:
+        st.markdown("### ⚠️ 上影線 (可能轉弱)")
+        st.markdown("<div style='text-align:center; font-size:35px; line-height:1;'>⫕<br>┃</div>", unsafe_allow_html=True)
+        st.caption("上影線長度大於實體 1.5 倍。代表高檔遭遇強力反撲，注意主力倒貨拉回。")
+    with c_k4:
+        st.markdown("### 💡 下影線 (可能轉強)")
+        st.markdown("<div style='text-align:center; font-size:35px; line-height:1;'>┃<br>⫖</div>", unsafe_allow_html=True)
+        st.caption("下影線長度大於實體 1.5 倍。代表下方買盤支撐強烈，低檔有大戶進場護盤。")
+
 st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("真實證券報價、官方籌碼與配息資料同步中..."):
@@ -358,17 +373,14 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 重新排列欄位，把籌碼面拉到顯眼的位置
     display_df = final_data[['📌 持有', '原始代號', '標的', '📊 官方籌碼', '🤖 系統建議', '現價', '成交量(張)', '趨勢格局', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 啟動 PRO 級試算表編輯器
     edited_df = st.data_editor(
         display_df,
         key="portfolio_editor", 
         hide_index=True,
         use_container_width=False, 
-        # 鎖定報價與抓下來的官方籌碼，保留持股、成交量與配息的手動修改權限
         disabled=["標的", "📊 官方籌碼", "🤖 系統建議", "現價", "趨勢格局"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
