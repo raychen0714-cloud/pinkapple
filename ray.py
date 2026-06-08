@@ -16,8 +16,11 @@ DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
     return {
         "total_div": 0.0,
         "max_price": 1000,
@@ -179,11 +182,11 @@ max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current
 if max_price != current_max:
     st.session_state.app_data["max_price"] = max_price
     save_data(st.session_state.app_data)
+    st.rerun()  # 🔥 修正：強制重整頁面鎖定最新最高價位
 
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
 
-# 🔥🔥🔥 修正：手動清單綁定記憶庫，保證不消失 🔥🔥🔥
 saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116")
 manual_tickers_str = st.sidebar.text_input(
     "🔍 4. 手動新增觀察標的", 
@@ -197,7 +200,7 @@ if manual_tickers_str != saved_tickers:
     st.rerun()
 
 # --- 🧠 3. 核心運算引擎 ---
-@st.cache_data(ttl=60) 
+@st.cache_data(ttl=30)  # 🔥 盤中更新加速：縮短快取時間到 30 秒
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
     tickers_to_fetch = {}
     
@@ -262,18 +265,33 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if len(hist) < 10 and is_manual: continue
             elif len(hist) < 60 and not is_manual: continue
             
+            # 🔥🔥🔥 PRO級盤中即時價格更新修正機制 🔥🔥🔥
+            close_px = np.nan
             try:
+                # 優先抓取即時快閃報價
                 close_px = float(tk.fast_info.last_price)
-                if np.isnan(close_px) or close_px <= 0: close_px = float(hist['Close'].iloc[-1])
-            except: close_px = float(hist['Close'].iloc[-1])
+            except:
+                pass
+                
+            # 若 fast_info 盤中未更新，強制拉取今日 1 分鐘級別 K 線取得最新即時價
+            if np.isnan(close_px) or close_px <= 0:
+                try:
+                    today_live = tk.history(period="1d", interval="1m")
+                    if not today_live.empty:
+                        close_px = float(today_live['Close'].iloc[-1])
+                except:
+                    pass
+            
+            # 若上述盤中動態抓取皆失敗，才退回採用昨日歷史收盤價
+            if np.isnan(close_px) or close_px <= 0:
+                close_px = float(hist['Close'].iloc[-1])
                 
             if not is_manual and close_px > price_limit: continue
             
-            # 🔥🔥🔥 新增：精準計算今日漲跌幅與漲跌點數 🔥🔥🔥
             try:
                 prev_close = float(hist['Close'].iloc[-2])
-                price_change_abs = close_px - prev_close # 計算漲跌幾塊錢
-                price_change_pct = (price_change_abs / prev_close) * 100 # 計算漲跌幅
+                price_change_abs = close_px - prev_close 
+                price_change_pct = (price_change_abs / prev_close) * 100 
                 
                 if price_change_abs > 0:
                     change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
@@ -315,7 +333,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 elif px_up: note = "🟡 溫和上漲"
                 else: note = "⚪ 量縮回檔"
                 
-            if bias > 20: note = "🔥 短線過熱，留意獲利了結"
+            if bias > 20: note = "🔥 短線過熱，留意獲年了結"
 
             try:
                 O = float(hist['Open'].iloc[-1])
@@ -349,7 +367,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 "代號": code_only, 
                 "名稱": name,
                 "現價": round(close_px, 2), 
-                "📈 漲跌": change_str, # 🔥 寫入漲跌幅欄位
+                "📈 漲跌": change_str, 
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
                 "📊 官方籌碼": current_chip,  
@@ -445,26 +463,22 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 🔥🔥🔥 修正：優化欄位，加入漲跌幅「台股專屬」紅綠顏色顯示 🔥🔥🔥
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 1. 建立台股專屬顏色邏輯 (紅漲綠跌)
     def color_tw_stock(val):
         if isinstance(val, str):
             if '🔺' in val:
-                return 'color: #ff4b4b; font-weight: bold;' # Streamlit 專屬紅色 + 粗體
+                return 'color: #ff4b4b; font-weight: bold;' 
             elif '🔻' in val:
-                return 'color: #09ab3b; font-weight: bold;' # Streamlit 專屬綠色 + 粗體
+                return 'color: #09ab3b; font-weight: bold;' 
         return ''
 
-    # 2. 將顏色樣式套用到 DataFrame 的「📈 漲跌」這個欄位
     if hasattr(display_df.style, "map"):
         styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌'])
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表 (🔥🔥🔥 解除所有寬度鎖定版 🔥🔥🔥)
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
