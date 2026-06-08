@@ -478,25 +478,25 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🔥🔥🔥 終極渲染與強制比對存檔模組 🔥🔥🔥
+    # 🔥🔥🔥 絕對鎖死版：關閉自動填滿，強制聽從你設定的寬度 🔥🔥🔥
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=False,  # 不強制填滿，保護字體不被吃掉
-        height=800,                 # 表格拉長，填滿空白
+        use_container_width=False,  # 🔥 1. 關閉自動填滿！這是「固定死」的最重要開關
+        height=800,                 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width="medium"),
+            "標的": st.column_config.TextColumn("標的", width="small"),
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
             "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
             "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), 
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="large")
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="small"), # 🔥 2. 強迫縮到最小 (多餘的字會變 ...)
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium")  
         }
     )
 
