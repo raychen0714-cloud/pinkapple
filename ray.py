@@ -482,58 +482,61 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表 (🔥🔥🔥 增加表格高度版 🔥🔥🔥)
+    # 3. 顯示帶有顏色的 PRO 試算表
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=True, 
-        height=800,  # 🔥🔥🔥 新增這一行：設定表格高度為 800 像素，把下面的空白填滿！
+        use_container_width=False, # 關閉自動填滿，保護自訂欄寬
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
-            # ... 下面的設定都維持你原本的樣子不用動 ...
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有"),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的"),
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌"), 
-            "成交量(張)": st.column_config.NumberColumn("成交量"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼"),
-            "趨勢格局": st.column_config.TextColumn("趨勢"), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議"), 
-            "💰 最新配息": st.column_config.TextColumn("💰 配息")
+            "標的": st.column_config.TextColumn("標的", width="medium"),
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), 
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), 
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), 
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="large")
         }
     )
 
-    if "portfolio_editor" in st.session_state:
-        edited_rows = st.session_state["portfolio_editor"].get("edited_rows", {})
-        if edited_rows:
-            has_changes = False
-            current_held = st.session_state.app_data.get("held_stocks", [])
-            
-            for str_idx, changes in edited_rows.items():
-                row_idx = int(str_idx)
-                ticker_key = display_df.iloc[row_idx]['原始代號']
-                
-                if "📌 持有" in changes:
-                    is_checked = changes["📌 持有"]
-                    if is_checked and (ticker_key not in current_held):
-                        current_held.append(ticker_key)
-                    elif (not is_checked) and (ticker_key in current_held):
-                        current_held.remove(ticker_key)
-                    st.session_state.app_data["held_stocks"] = current_held
-                    has_changes = True
-                
-                if "💰 最新配息" in changes:
-                    new_val = changes["💰 最新配息"]
-                    st.session_state.app_data["custom_div_map"][ticker_key] = new_val
-                    has_changes = True
-                    
-            if has_changes:
-                save_data(st.session_state.app_data)       
-                st.session_state.show_save_success = True  
-                st.rerun()                                 
+    # 🔥🔥🔥 終極修復：放棄有 Bug 的 session_state，直接暴力比對修改前後的 DataFrame 🔥🔥🔥
+    has_changes = False
+    current_held = st.session_state.app_data.get("held_stocks", [])
+
+    # 一行一行檢查你是不是有修改東西
+    for i in range(len(display_df)):
+        ticker_key = display_df.iloc[i]['原始代號']
+        
+        # 1. 檢查是否打勾或取消「持有」
+        old_held = bool(display_df.iloc[i]['📌 持有'])
+        new_held = bool(edited_df.iloc[i]['📌 持有'])
+        if old_held != new_held:
+            if new_held and (ticker_key not in current_held):
+                current_held.append(ticker_key)
+            elif (not new_held) and (ticker_key in current_held):
+                current_held.remove(ticker_key)
+            has_changes = True
+
+        # 2. 檢查是否手動修改了「配息」
+        old_div = str(display_df.iloc[i]['💰 最新配息'])
+        new_div = str(edited_df.iloc[i]['💰 最新配息'])
+        if old_div != new_div:
+            st.session_state.app_data["custom_div_map"][ticker_key] = new_div
+            has_changes = True
+
+    # 只要有任何修改，立刻永久存檔並重整畫面
+    if has_changes:
+        st.session_state.app_data["held_stocks"] = current_held
+        save_data(st.session_state.app_data)       
+        st.session_state.show_save_success = True  
+        st.rerun()
+
+else:
+    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")                                 
 
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
