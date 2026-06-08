@@ -185,7 +185,7 @@ max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current
 if max_price != current_max:
     st.session_state.app_data["max_price"] = max_price
     save_data(st.session_state.app_data)
-    st.rerun()  # 🔥 修正：強制重整頁面鎖定最新最高價位
+    st.rerun()  
 
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
@@ -203,7 +203,7 @@ if manual_tickers_str != saved_tickers:
     st.rerun()
 
 # --- 🧠 3. 核心運算引擎 ---
-@st.cache_data(ttl=30)  # 🔥 盤中更新加速：縮短快取時間到 30 秒
+@st.cache_data(ttl=30)  
 def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
     tickers_to_fetch = {}
     
@@ -268,15 +268,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if len(hist) < 10 and is_manual: continue
             elif len(hist) < 60 and not is_manual: continue
             
-            # 🔥🔥🔥 PRO級盤中即時價格更新修正機制 🔥🔥🔥
             close_px = np.nan
             try:
-                # 優先抓取即時快閃報價
                 close_px = float(tk.fast_info.last_price)
             except:
                 pass
                 
-            # 若 fast_info 盤中未更新，強制拉取今日 1 分鐘級別 K 線取得最新即時價
             if np.isnan(close_px) or close_px <= 0:
                 try:
                     today_live = tk.history(period="1d", interval="1m")
@@ -285,7 +282,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 except:
                     pass
             
-            # 若上述盤中動態抓取皆失敗，才退回採用昨日歷史收盤價
             if np.isnan(close_px) or close_px <= 0:
                 close_px = float(hist['Close'].iloc[-1])
                 
@@ -336,7 +332,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 elif px_up: note = "🟡 溫和上漲"
                 else: note = "⚪ 量縮回檔"
                 
-            if bias > 20: note = "🔥 短線過熱，留意獲年了結"
+            if bias > 20: note = "🔥 短線過熱，留意獲利了結"
 
             try:
                 O = float(hist['Open'].iloc[-1])
@@ -482,12 +478,13 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表
+    # 🔥🔥🔥 終極渲染與強制比對存檔模組 🔥🔥🔥
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=False, # 關閉自動填滿，保護自訂欄寬
+        use_container_width=False,  # 不強制填滿，保護字體不被吃掉
+        height=800,                 # 表格拉長，填滿空白
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
@@ -503,15 +500,13 @@ if not final_data.empty:
         }
     )
 
-    # 🔥🔥🔥 終極修復：放棄有 Bug 的 session_state，直接暴力比對修改前後的 DataFrame 🔥🔥🔥
+    # 暴力比對迴圈：一有修改，立刻存檔！
     has_changes = False
     current_held = st.session_state.app_data.get("held_stocks", [])
 
-    # 一行一行檢查你是不是有修改東西
     for i in range(len(display_df)):
         ticker_key = display_df.iloc[i]['原始代號']
         
-        # 1. 檢查是否打勾或取消「持有」
         old_held = bool(display_df.iloc[i]['📌 持有'])
         new_held = bool(edited_df.iloc[i]['📌 持有'])
         if old_held != new_held:
@@ -521,22 +516,17 @@ if not final_data.empty:
                 current_held.remove(ticker_key)
             has_changes = True
 
-        # 2. 檢查是否手動修改了「配息」
         old_div = str(display_df.iloc[i]['💰 最新配息'])
         new_div = str(edited_df.iloc[i]['💰 最新配息'])
         if old_div != new_div:
             st.session_state.app_data["custom_div_map"][ticker_key] = new_div
             has_changes = True
 
-    # 只要有任何修改，立刻永久存檔並重整畫面
     if has_changes:
         st.session_state.app_data["held_stocks"] = current_held
         save_data(st.session_state.app_data)       
         st.session_state.show_save_success = True  
         st.rerun()
-
-else:
-    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")                                 
 
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
