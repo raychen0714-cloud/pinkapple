@@ -134,14 +134,14 @@ chip_data_map = fetch_twse_institutional_data()
 CUSTOM_NAME_MAP = {
     "0050.TW": "元大台灣50",
     "0052.TW": "富邦科技",
-    "00692.TW": "富邦公司治理",
-    "00713.TW": "元大台灣高息低波",
+    "00692.TW": "富邦治理",
+    "00713.TW": "元大低波",
     "4958.TW": "臻鼎-KY",
     "3037.TW": "四欣技",
     "3481.TW": "群創",
     "2887.TW": "台新金",
-    "00631L.TW": "元大台灣50正2",
-    "00685L.TW": "群益台股正2",
+    "00631L.TW": "元大正2",
+    "00685L.TW": "群益正2",
     "00981A.TW": "瑤姊",
     "00927.TW": "群益半導體",
     "00918.TW": "大華"
@@ -496,12 +496,12 @@ if not final_data.empty:
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width="medium"), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 🔥 放大到 medium，解決「切到了」的問題
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 🔥 給足空間不切字
             "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="medium"), # 字數較多，給 medium 保證不切字
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="medium"), # 🔥 給足空間不切字
             "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), # 🔥 設為 large，當作「海綿」吸收畫面上多餘的空白
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 給予足夠空間，確保不會被擠到螢幕外，且方便點擊輸入
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), # 🔥 當海綿吸收多餘空白
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 🔥 確保不會被擠出螢幕
         }
     )
 
