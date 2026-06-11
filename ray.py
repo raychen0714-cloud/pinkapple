@@ -464,7 +464,8 @@ if not final_data.empty:
     
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
     # 拔掉 "📌 持有" 的排序，確保輸入配息時不會跳行
-    display_df = display_df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
+    # 加上這行，強制讓打勾的標的排在最上面，接著才按成交量排序
+    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
         if isinstance(val, str):
