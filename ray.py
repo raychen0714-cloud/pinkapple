@@ -484,25 +484,24 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🔥🔥🔥 最終調整：強制壓縮不必要的欄位，把空間全留給配息 🔥🔥🔥
+    # 3. 顯示帶有顏色的 PRO 試算表 (強制鎖定各欄位寬度版)
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
         hide_index=True,
-        use_container_width=True, # 必須開啟，否則無法正確計算螢幕內的空間分配
-        height=800,
+        use_container_width=True, # 保持整體表格填滿螢幕
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
-            "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width="medium"), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"), 
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="medium"), # ⚠️ 改成 medium，讓文字透氣
-            "趨勢格局": st.column_config.TextColumn("趨勢", width="medium"),     # ⚠️ 改成 medium
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), # ⚠️ 改成 medium
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="small")   # ⚠️ 改成 small，消滅無謂空白
+            "原始代號": None, # 隱藏此欄
+            "標的": st.column_config.TextColumn("標的", width="medium"), # 給股票名稱多一點空間
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"), # 強制縮窄
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"), # 強制縮窄
+            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"), # 強制縮窄
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"), # 強制縮窄
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), # 強制縮窄
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), # 建議字比較多，給中等寬度
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 確保配息有足夠空間顯示
         }
     )
 
