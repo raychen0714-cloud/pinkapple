@@ -463,7 +463,8 @@ if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
-    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
+    # 拔掉 "📌 持有" 的排序，確保輸入配息時不會跳行
+    display_df = display_df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
     
     def color_tw_stock(val):
         if isinstance(val, str):
@@ -489,14 +490,14 @@ if not final_data.empty:
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width="medium"), # 讓標的保持 medium 顯示中文
+            "標的": st.column_config.TextColumn("標的", width="medium"), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"), # 🔥 關鍵：強迫縮小漲跌，消滅空白
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="small"), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="small"),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="small"), # 🔥 關鍵：強迫縮小建議，消滅空白
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="large")  # 🔥 關鍵：把空間全吐給配息
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="medium"), # ⚠️ 改成 medium，讓文字透氣
+            "趨勢格局": st.column_config.TextColumn("趨勢", width="medium"),     # ⚠️ 改成 medium
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="medium"), # ⚠️ 改成 medium
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="small")   # ⚠️ 改成 small，消滅無謂空白
         }
     )
 
