@@ -561,25 +561,11 @@ if not final_data.empty:
                     bg_color = "#f5f5f5"   # 淺灰底
                     pct_str = "0.0%"
                     
-                # 每個小方塊的樣式 (彈性設計，會自動排版與換行)
-                boxes_html += f"""
-                <div style="display: inline-block; background-color: {bg_color}; color: {color}; 
-                            padding: 4px 6px; margin: 3px; border-radius: 6px; font-size: 13px; 
-                            border: 1px solid {color}; text-align: center; min-width: 45px;">
-                    <div style="font-size: 10px; color: #555; margin-bottom: 2px;">{date_str}</div>
-                    <div style="font-weight: bold; font-family: monospace;">{pct_str}</div>
-                </div>
-                """
+                # 【修正重點】：強制單行，不留任何前導縮排空白，防止 Streamlit 誤判為程式碼區塊
+                boxes_html += f"""<div style="display:inline-block; background-color:{bg_color}; color:{color}; padding:4px 6px; margin:3px; border-radius:6px; font-size:13px; border:1px solid {color}; text-align:center; min-width:45px;"><div style="font-size:10px; color:#555; margin-bottom:2px;">{date_str}</div><div style="font-weight:bold; font-family:monospace;">{pct_str}</div></div>"""
                 
-            # 將該檔股票的所有方塊包裝起來
-            html_output += f"""
-            <div style="margin-bottom: 20px; padding: 15px; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                <h5 style="margin-top: 0; margin-bottom: 10px; color: #1e3c72; border-bottom: 2px solid #f0f2f6; padding-bottom: 5px;">📌 {row['標的']}</h5>
-                <div style="display: flex; flex-wrap: wrap;">
-                    {boxes_html}
-                </div>
-            </div>
-            """
+            # 將該檔股票的所有方塊包裝起來 (同樣強制單行)
+            html_output += f"""<div style="margin-bottom:20px; padding:15px; background-color:#ffffff; border:1px solid #e0e0e0; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,0.05);"><h5 style="margin-top:0; margin-bottom:10px; color:#1e3c72; border-bottom:2px solid #f0f2f6; padding-bottom:5px;">📌 {row['標的']}</h5><div style="display:flex; flex-wrap:wrap;">{boxes_html}</div></div>"""
             
         if html_output:
             # 輸出渲染 HTML
