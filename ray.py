@@ -586,14 +586,15 @@ if not final_data.empty:
 st.markdown("---")
 st.subheader("🔍 核心成分股 ETF 權重透視矩陣")
 
-# 1. 載入權重檔案
 WEIGHTS_FILE = os.path.join(BASE_DIR, "weights.json")
+
 def load_weights():
     if os.path.exists(WEIGHTS_FILE):
         with open(WEIGHTS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
+# 載入資料庫
 ETF_HOLDINGS_DB = load_weights()
 
 search_stocks = {
@@ -603,21 +604,25 @@ search_stocks = {
     "2327.TW": "國巨", "2308.TW": "台達電", "2383.TW": "台光電"
 }
 
-# 2. 構建矩陣
-matrix_data = []
-# 這裡列出你想顯示的所有 ETF
 all_etfs = ["0050.TW", "0052.TW", "00878.TW", "00919.TW", "00929.TW", "00927.TW"]
 
+# 構建矩陣數據 (確保在這裡定義 matrix_data)
+matrix_data = []
 for etf_code in all_etfs:
-    row = {"代號": etf_code.replace(".TW", ""), "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF")}
+    # 這裡確保 ETF 名稱對應正確
+    etf_name = CUSTOM_NAME_MAP.get(etf_code, etf_code.replace(".TW", ""))
+    row = {"代號": etf_code.replace(".TW", ""), "ETF 名稱": etf_name}
+    
     for s_code, s_name in search_stocks.items():
-        # 從 JSON 資料庫中取值
-        val = ETF_HOLDINGS_DB.get(s_code, {}).get(etf_code, 0)
-        row[s_name] = f"{val:.2f}%" if val > 0 else "-"
+        # 從我們載入的資料庫中尋找權重
+        stock_weights = ETF_HOLDINGS_DB.get(s_code, {})
+        weight = stock_weights.get(etf_code, 0)
+        row[s_name] = f"{weight:.2f}%" if weight > 0 else "-"
     matrix_data.append(row)
 
-df_matrix = pd.DataFrame(matrix_data)
-st.dataframe(df_matrix, hide_index=True, use_container_width=True)
-
-df_matrix = pd.DataFrame(matrix_data)
-st.dataframe(df_matrix, hide_index=True, use_container_width=True)
+# 確保在 dataframe 轉換前 matrix_data 已經存在
+if matrix_data:
+    df_matrix = pd.DataFrame(matrix_data)
+    st.dataframe(df_matrix, hide_index=True, use_container_width=True)
+else:
+    st.warning("權重數據載入失敗，請檢查 weights.json 是否存在。")
