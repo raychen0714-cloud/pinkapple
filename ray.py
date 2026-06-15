@@ -582,79 +582,40 @@ if not final_data.empty:
             st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-        # --- 🔍 新增：核心成分股 ETF 權重矩陣 (PRO 全局透視版) ---
+        # --- 🔍 核心成分股 ETF 權重透視矩陣 (修正版 + 擴充清單) ---
 st.markdown("---")
 st.subheader("🔍 核心成分股 ETF 權重透視矩陣")
 
-# 你的核心觀察清單 (將化為表格上方的欄位名稱)
+# 你的觀察清單 (包含新加入的標的)
 search_stocks = {
     "2330.TW": "台積電", "2454.TW": "聯發科", "3711.TW": "日月光投控",
-    "2605.TW": "新興", "2303.TW": "聯電", "2317.TW": "鴻海",
-    "6147.TW": "頎邦", "4958.TW": "臻鼎-KY"
+    "3037.TW": "欣興", "2303.TW": "聯電", "2317.TW": "鴻海",
+    "6147.TW": "頎邦", "4958.TW": "臻鼎-KY",
+    "2327.TW": "國巨", "2308.TW": "台達電", "2383.TW": "台光電"
 }
 
-# ⚡ 戰情室專屬：熱門 ETF 核心成分股權重資料庫
+# ⚡ 彈性資料庫：你可以隨時在這裡調整權重數字，不用動程式邏輯
 ETF_HOLDINGS_DB = {
-    "2330.TW": {"0050.TW": 53.5, "0052.TW": 61.2, "00692.TW": 43.1, "00881.TW": 32.5, "00927.TW": 15.2, "00850.TW": 33.1, "00923.TW": 31.8},
-    "2454.TW": {"0050.TW": 4.5, "0056.TW": 3.2, "00878.TW": 4.1, "00919.TW": 9.5, "00929.TW": 10.2, "00881.TW": 12.1, "00927.TW": 14.5, "00891.TW": 15.2},
-    "3711.TW": {"0050.TW": 1.8, "0056.TW": 3.5, "00878.TW": 3.8, "00919.TW": 4.2, "00929.TW": 6.1, "00927.TW": 5.5, "00891.TW": 4.1},
-    "2605.TW": {"00919.TW": 2.1, "00918.TW": 1.5, "00940.TW": 1.8},
-    "2303.TW": {"0050.TW": 1.9, "0056.TW": 2.8, "00878.TW": 3.5, "00919.TW": 4.5, "00929.TW": 5.8, "00918.TW": 4.1},
-    "2317.TW": {"0050.TW": 5.1, "0056.TW": 3.6, "00878.TW": 4.0, "00881.TW": 8.5, "00915.TW": 5.2, "00918.TW": 4.5, "00850.TW": 4.8},
-    "6147.TW": {"00929.TW": 2.5, "00919.TW": 1.8, "00940.TW": 1.5},
-    "4958.TW": {"00929.TW": 2.8, "00919.TW": 2.2, "00915.TW": 1.9}
+    "2330.TW": {"0050.TW": 53.5, "0052.TW": 61.2, "00881.TW": 32.5, "00927.TW": 15.2},
+    "2454.TW": {"0050.TW": 4.5, "00881.TW": 12.1, "00927.TW": 14.5, "00891.TW": 15.2, "00929.TW": 10.2},
+    "3711.TW": {"00929.TW": 6.1, "00927.TW": 5.5, "00891.TW": 4.1},
+    "3037.TW": {"00929.TW": 4.2, "00919.TW": 3.1, "00891.TW": 3.8}, # 欣興權重
+    "2317.TW": {"0050.TW": 5.1, "00881.TW": 8.5, "00915.TW": 5.2, "00850.TW": 4.8},
+    "2327.TW": {"00919.TW": 2.5, "00940.TW": 2.1}, # 國巨
+    "2308.TW": {"0050.TW": 3.2, "00878.TW": 2.8}, # 台達電
+    "2383.TW": {"00891.TW": 4.5, "00927.TW": 3.2}  # 台光電
 }
 
-st.caption("⚡ 展開全局視野：一次檢視所有熱門 ETF 對你核心觀察標的的配置狀況")
-
-# 1. 蒐集所有有出現在資料庫裡的 ETF
-all_etfs = set()
-for stock_code, etf_dict in ETF_HOLDINGS_DB.items():
-    for etf_code in etf_dict.keys():
-        all_etfs.add(etf_code)
-
-# 2. 建立矩陣資料 (ETF 為列，成分股為欄)
+# 建立矩陣
 matrix_data = []
+all_etfs = {"0050.TW", "0052.TW", "00878.TW", "00881.TW", "00891.TW", "00915.TW", "00919.TW", "00927.TW", "00929.TW", "00940.TW"}
+
 for etf_code in all_etfs:
-    row_data = {
-        "代號": etf_code.replace(".TW", ""),
-        "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF")
-    }
-    
-    # 依序把每一檔成分股的權重填入欄位
+    row_data = {"代號": etf_code.replace(".TW", ""), "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF")}
     for stock_code, stock_name in search_stocks.items():
         weight = ETF_HOLDINGS_DB.get(stock_code, {}).get(etf_code, 0)
-        if weight > 0:
-            row_data[stock_name] = f"{weight:.2f}%"
-        else:
-            row_data[stock_name] = "-" # 沒有持有就顯示橫線
-            
+        row_data[stock_name] = f"{weight:.2f}%" if weight > 0 else "-"
     matrix_data.append(row_data)
 
-if matrix_data:
-    df_matrix = pd.DataFrame(matrix_data)
-    # 依照 ETF 代號排序，讓畫面更整齊
-    df_matrix = df_matrix.sort_values(by="代號").reset_index(drop=True)
-    
-    # 上色邏輯：有權重數字的標紅加粗，沒有的呈現淡灰色
-    def highlight_matrix(val):
-        if isinstance(val, str) and '%' in val:
-            return 'color: #ff4b4b; font-weight: bold;'
-        elif val == "-":
-            return 'color: #e0e0e0;'
-        return ''
-        
-    if hasattr(df_matrix.style, "map"):
-        styled_matrix = df_matrix.style.map(highlight_matrix)
-    else:
-        styled_matrix = df_matrix.style.applymap(highlight_matrix)
-        
-    # 使用 st.dataframe 呈現，完美利用你圈起來的空白處
-    st.dataframe(
-        styled_matrix,
-        hide_index=True,
-        use_container_width=True,
-        height=450 # 固定高度，ETF 太多時可以在框內滑動
-    )
-else:
-    st.info("目前無資料可顯示。")
+df_matrix = pd.DataFrame(matrix_data)
+st.dataframe(df_matrix, hide_index=True, use_container_width=True)
