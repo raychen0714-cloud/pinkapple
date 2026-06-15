@@ -503,16 +503,16 @@ if not final_data.empty:
         use_container_width=True, 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width="small"),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50), # 固定極小寬度
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width="medium"), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width="small"),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width="medium"), # 🔥 給足空間不切字
-            "成交量(張)": st.column_config.NumberColumn("成交量", width="small"),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width="medium"), # 🔥 給足空間不切字
-            "趨勢格局": st.column_config.TextColumn("趨勢", width="small"), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width="large"), # 🔥 當海綿吸收多餘空白
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width="medium") # 🔥 確保不會被擠出螢幕
+            "標的": st.column_config.TextColumn("標的", width=150), # 給定固定寬度
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=120), 
+            "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=120),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=200), # 限制此欄寬度，防止它無限制擴張
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=150) # 給予足夠顯示空間
         }
     )
 
