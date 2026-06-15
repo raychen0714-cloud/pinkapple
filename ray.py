@@ -19,23 +19,33 @@ def load_data():
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
-            pass
-    return {
-        "total_div": 0.0,
-        "max_price": 1000,
-        "custom_div_map": {
-            "00919.TW": "1.0元",
-            "00918.TW": "1.26元",
-            "0056.TW": "1.0元" 
-        },
-        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
-    }
+        except Exception as e:
+            st.error(f"⚠️ 資料檔案讀取錯誤，請檢查檔案格式是否損壞: {e}")
+            return { # 萬一真的壞了，這裡是你暫時的備份結構
+                "total_div": 0.0,
+                "max_price": 1000,
+                "custom_div_map": {},
+                "held_stocks": [],
+                "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+            }
+    else:
+        # 如果檔案不存在，則建立預設值
+        return {
+            "total_div": 0.0,
+            "max_price": 1000,
+            "custom_div_map": {},
+            "held_stocks": [],
+            "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+        }
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            f.flush() # 強制刷新記憶體到硬碟
+            os.fsync(f.fileno()) # 強制同步寫入
+    except Exception as e:
+        st.error(f"❌ 存檔失敗: {e}")
 
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
@@ -183,13 +193,14 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
+# 確保這一行真的讀到了 session_state
 current_max = st.session_state.app_data.get("max_price", 1000)
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10)
+max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=float(current_max), step=10.0)
 
-if max_price != current_max:
-    st.session_state.app_data["max_price"] = max_price
+if float(max_price) != float(current_max):
+    st.session_state.app_data["max_price"] = float(max_price)
     save_data(st.session_state.app_data)
-    st.rerun()  
+    st.rerun() # 立即重整  
 
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
