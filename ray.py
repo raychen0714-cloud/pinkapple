@@ -358,17 +358,18 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 up_shadow = H - max(O, C)
                 dn_shadow = min(O, C) - L
                 tr = H - L
-                k_msg = "➖"
+                # --- 修改後的文字邏輯 ---
+                k_msg = "形態平穩"
                 if tr > 0:
                     if body / tr >= 0.6:
-                        if C >= O: k_msg = "🚀 紅K"
-                        else: k_msg = "🔻 黑K"
+                        if C >= O: k_msg = "強勢紅K"
+                        else: k_msg = "疲軟黑K"
                     elif up_shadow > body * 1.5 and up_shadow > dn_shadow * 1.5:
-                        if C >= O: k_msg = "⚠️ 紅上影"
-                        else: k_msg = "☠️ 綠上影"
+                        if C >= O: k_msg = "上影線(賣壓)"
+                        else: k_msg = "長上影線(重壓)"
                     elif dn_shadow > body * 1.5 and dn_shadow > up_shadow * 1.5:
-                        if C >= O: k_msg = "💡 紅下影"
-                        else: k_msg = "🛡️ 綠下影"
+                        if C >= O: k_msg = "下影線(買盤)"
+                        else: k_msg = "下影線(止跌)"
                 note = f"[{k_msg}] {note}"
             except: pass
 
