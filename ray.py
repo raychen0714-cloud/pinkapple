@@ -582,20 +582,21 @@ if not final_data.empty:
             st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-        # --- 🔍 核心成分股 ETF 權重透視矩陣 (JSON 讀取穩定版) ---
+        # --- 🔍 核心成分股 ETF 權重透視矩陣 (最終穩定版) ---
 st.markdown("---")
 st.subheader("🔍 核心成分股 ETF 權重透視矩陣")
 
-WEIGHTS_FILE = os.path.join(BASE_DIR, "weights.json")
-
-def load_weights():
-    if os.path.exists(WEIGHTS_FILE):
-        with open(WEIGHTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-# 載入資料庫
-ETF_HOLDINGS_DB = load_weights()
+# 這是你的核心資料庫，直接在這裡修改數字即可！
+# 格式為: "股票代號": {"ETF代號": 權重數字}
+ETF_DATA = {
+    "2330.TW": {"0050.TW": 53.5, "0052.TW": 64.42},
+    "2454.TW": {"0050.TW": 4.5, "0052.TW": 7.02},
+    "3037.TW": {"00929.TW": 4.2},
+    "2317.TW": {"0050.TW": 5.1, "0052.TW": 0.47},
+    "2327.TW": {"00919.TW": 2.5},
+    "2308.TW": {"0050.TW": 3.2},
+    "2383.TW": {"00891.TW": 4.5}
+}
 
 search_stocks = {
     "2330.TW": "台積電", "2454.TW": "聯發科", "3711.TW": "日月光投控",
@@ -606,23 +607,18 @@ search_stocks = {
 
 all_etfs = ["0050.TW", "0052.TW", "00878.TW", "00919.TW", "00929.TW", "00927.TW"]
 
-# 構建矩陣數據 (確保在這裡定義 matrix_data)
+# 構建矩陣數據
 matrix_data = []
-for etf_code in all_etfs:
-    # 這裡確保 ETF 名稱對應正確
-    etf_name = CUSTOM_NAME_MAP.get(etf_code, etf_code.replace(".TW", ""))
-    row = {"代號": etf_code.replace(".TW", ""), "ETF 名稱": etf_name}
-    
-    for s_code, s_name in search_stocks.items():
-        # 從我們載入的資料庫中尋找權重
-        stock_weights = ETF_HOLDINGS_DB.get(s_code, {})
-        weight = stock_weights.get(etf_code, 0)
-        row[s_name] = f"{weight:.2f}%" if weight > 0 else "-"
+for etf in all_etfs:
+    row = {"代號": etf.replace(".TW", ""), "ETF 名稱": CUSTOM_NAME_MAP.get(etf, etf.replace(".TW", ""))}
+    for stock_code, stock_name in search_stocks.items():
+        # 如果資料庫裡有這檔 ETF 對應這檔股票的權重就讀取，沒有就顯示 "-"
+        weight = ETF_DATA.get(stock_code, {}).get(etf, 0)
+        row[stock_name] = f"{weight:.2f}%" if weight > 0 else "-"
     matrix_data.append(row)
 
-# 確保在 dataframe 轉換前 matrix_data 已經存在
-if matrix_data:
-    df_matrix = pd.DataFrame(matrix_data)
-    st.dataframe(df_matrix, hide_index=True, use_container_width=True)
+# 顯示表格
+df_final = pd.DataFrame(matrix_data)
+st.dataframe(df_final, hide_index=True, use_container_width=True)
 else:
     st.warning("權重數據載入失敗，請檢查 weights.json 是否存在。")
