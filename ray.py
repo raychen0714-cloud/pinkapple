@@ -582,21 +582,18 @@ if not final_data.empty:
             st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-        # --- 🔍 新增：成分股反查 ETF 權重監控區 (PRO 內建極速版) ---
+        # --- 🔍 新增：核心成分股 ETF 權重矩陣 (PRO 全局透視版) ---
 st.markdown("---")
-st.subheader("🔍 核心成分股反查 ETF 權重")
+st.subheader("🔍 核心成分股 ETF 權重透視矩陣")
 
-# 讓你可以自由挑選你想查的股票
+# 你的核心觀察清單 (將化為表格上方的欄位名稱)
 search_stocks = {
     "2330.TW": "台積電", "2454.TW": "聯發科", "3711.TW": "日月光投控",
     "2605.TW": "新興", "2303.TW": "聯電", "2317.TW": "鴻海",
     "6147.TW": "頎邦", "4958.TW": "臻鼎-KY"
 }
 
-selected_target = st.selectbox("選擇要反查的成分股", list(search_stocks.values()))
-target_code = [k for k, v in search_stocks.items() if v == selected_target][0]
-
-# ⚡ 戰情室專屬：熱門 ETF 核心成分股權重資料庫 (約略最新佔比，可隨時手動微調)
+# ⚡ 戰情室專屬：熱門 ETF 核心成分股權重資料庫
 ETF_HOLDINGS_DB = {
     "2330.TW": {"0050.TW": 53.5, "0052.TW": 61.2, "00692.TW": 43.1, "00881.TW": 32.5, "00927.TW": 15.2, "00850.TW": 33.1, "00923.TW": 31.8},
     "2454.TW": {"0050.TW": 4.5, "0056.TW": 3.2, "00878.TW": 4.1, "00919.TW": 9.5, "00929.TW": 10.2, "00881.TW": 12.1, "00927.TW": 14.5, "00891.TW": 15.2},
@@ -608,34 +605,56 @@ ETF_HOLDINGS_DB = {
     "4958.TW": {"00929.TW": 2.8, "00919.TW": 2.2, "00915.TW": 1.9}
 }
 
-st.caption(f"⚡ 啟用極速本地資料庫：查詢哪些熱門 ETF 重倉持有【{selected_target}】...")
+st.caption("⚡ 展開全局視野：一次檢視所有熱門 ETF 對你核心觀察標的的配置狀況")
 
-match_results = []
+# 1. 蒐集所有有出現在資料庫裡的 ETF
+all_etfs = set()
+for stock_code, etf_dict in ETF_HOLDINGS_DB.items():
+    for etf_code in etf_dict.keys():
+        all_etfs.add(etf_code)
 
-# 直接從我們建好的資料庫抓資料
-if target_code in ETF_HOLDINGS_DB:
-    holdings_data = ETF_HOLDINGS_DB[target_code]
-    for etf_code, weight in holdings_data.items():
-        match_results.append({
-            "ETF 代號": etf_code.replace(".TW", ""),
-            "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF"),
-            "持股權重": f"{weight:.2f}%"
-        })
-
-if match_results:
-    res_df = pd.DataFrame(match_results)
-    # 按照權重從高到低排序
-    res_df['sort_val'] = res_df['持股權重'].str.replace('%', '').astype(float)
-    res_df = res_df.sort_values(by='sort_val', ascending=False).drop(columns=['sort_val']).reset_index(drop=True)
+# 2. 建立矩陣資料 (ETF 為列，成分股為欄)
+matrix_data = []
+for etf_code in all_etfs:
+    row_data = {
+        "代號": etf_code.replace(".TW", ""),
+        "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF")
+    }
     
-    st.success(f"找到 {len(res_df)} 檔 ETF 持有 【{selected_target}】！")
+    # 依序把每一檔成分股的權重填入欄位
+    for stock_code, stock_name in search_stocks.items():
+        weight = ETF_HOLDINGS_DB.get(stock_code, {}).get(etf_code, 0)
+        if weight > 0:
+            row_data[stock_name] = f"{weight:.2f}%"
+        else:
+            row_data[stock_name] = "-" # 沒有持有就顯示橫線
+            
+    matrix_data.append(row_data)
+
+if matrix_data:
+    df_matrix = pd.DataFrame(matrix_data)
+    # 依照 ETF 代號排序，讓畫面更整齊
+    df_matrix = df_matrix.sort_values(by="代號").reset_index(drop=True)
     
-    def color_weight(val):
-        return 'color: #ff4b4b; font-weight: bold;'
+    # 上色邏輯：有權重數字的標紅加粗，沒有的呈現淡灰色
+    def highlight_matrix(val):
+        if isinstance(val, str) and '%' in val:
+            return 'color: #ff4b4b; font-weight: bold;'
+        elif val == "-":
+            return 'color: #e0e0e0;'
+        return ''
         
-    if hasattr(res_df.style, "map"):
-        st.table(res_df.style.map(color_weight, subset=['持股權重']))
+    if hasattr(df_matrix.style, "map"):
+        styled_matrix = df_matrix.style.map(highlight_matrix)
     else:
-        st.table(res_df.style.applymap(color_weight, subset=['持股權重']))
+        styled_matrix = df_matrix.style.applymap(highlight_matrix)
+        
+    # 使用 st.dataframe 呈現，完美利用你圈起來的空白處
+    st.dataframe(
+        styled_matrix,
+        hide_index=True,
+        use_container_width=True,
+        height=450 # 固定高度，ETF 太多時可以在框內滑動
+    )
 else:
-    st.info(f"目前戰情室監控的熱門 ETF 中，暫無揭露持有【{selected_target}】。")
+    st.info("目前無資料可顯示。")
