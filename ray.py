@@ -515,44 +515,76 @@ if not final_data.empty:
         st.session_state.show_save_success = True  
         st.rerun()
 
-    # --- 📊 新增：持股戰績檢閱器 ---
+    # --- 📊 新增：每日戰績熱力追蹤 (自動換行小方塊版) ---
     st.markdown("---")
-    st.subheader("🎯 持股區間戰績檢閱")
+    st.subheader("🎯 持股每日戰績追蹤")
     col_perf1, col_perf2 = st.columns([2, 5])
 
     with col_perf1:
-        perf_period = st.selectbox("選擇計算區間", ["1個月", "3個月", "6個月"], index=1)
-        period_map = {"1個月": "1mo", "3個月": "3mo", "6個月": "6mo"}
+        perf_period = st.selectbox("選擇追蹤區間", ["近1個月", "近3個月", "近6個月"], index=0)
+        period_map = {"近1個月": "1mo", "近3個月": "3mo", "近6個月": "6mo"}
 
     # 篩選出所有打勾「持有」的標的
     held_data = final_data[final_data['📌 持有'] == True]
 
     if not held_data.empty:
-        perf_results = []
+        html_output = ""
         for _, row in held_data.iterrows():
             tk = yf.Ticker(row['原始代號'])
             hist = tk.history(period=period_map[perf_period])
-            if len(hist) >= 2:
-                start_px = float(hist['Close'].iloc[0])
-                end_px = float(hist['Close'].iloc[-1])
-                perf_pct = ((end_px - start_px) / start_px) * 100
+            
+            if len(hist) < 2:
+                continue
                 
-                perf_str = f"{perf_pct:+.2f}%"
-                perf_results.append({"標的": row['標的'], "區間漲跌幅": perf_str})
-        
-        perf_df = pd.DataFrame(perf_results)
-        
-        def color_perf(val):
-            pct = float(val.replace('%', ''))
-            return 'color: #ff4b4b; font-weight: bold;' if pct > 0 else 'color: #09ab3b; font-weight: bold;'
-        
-        if not perf_df.empty:
-            if hasattr(perf_df.style, "map"):
-                st.table(perf_df.style.map(color_perf, subset=['區間漲跌幅']))
-            else:
-                st.table(perf_df.style.applymap(color_perf, subset=['區間漲跌幅']))
+            # 計算每日漲跌幅
+            hist['Prev_Close'] = hist['Close'].shift(1)
+            hist['Pct_Change'] = ((hist['Close'] - hist['Prev_Close']) / hist['Prev_Close']) * 100
+            hist = hist.dropna(subset=['Pct_Change'])
+            
+            # 建立小方塊 HTML (含日期與漲跌幅)
+            boxes_html = ""
+            for date, h_row in hist.iterrows():
+                pct = h_row['Pct_Change']
+                date_str = date.strftime("%m/%d") # 顯示月/日
+                
+                # 根據漲跌判定顏色
+                if pct > 0:
+                    color = "#ff4b4b"      # 紅字
+                    bg_color = "#ffeeee"   # 淺紅底
+                    pct_str = f"+{pct:.1f}%"
+                elif pct < 0:
+                    color = "#09ab3b"      # 綠字
+                    bg_color = "#eeffee"   # 淺綠底
+                    pct_str = f"{pct:.1f}%"
+                else:
+                    color = "#888888"      # 灰字
+                    bg_color = "#f5f5f5"   # 淺灰底
+                    pct_str = "0.0%"
+                    
+                # 每個小方塊的樣式 (彈性設計，會自動排版與換行)
+                boxes_html += f"""
+                <div style="display: inline-block; background-color: {bg_color}; color: {color}; 
+                            padding: 4px 6px; margin: 3px; border-radius: 6px; font-size: 13px; 
+                            border: 1px solid {color}; text-align: center; min-width: 45px;">
+                    <div style="font-size: 10px; color: #555; margin-bottom: 2px;">{date_str}</div>
+                    <div style="font-weight: bold; font-family: monospace;">{pct_str}</div>
+                </div>
+                """
+                
+            # 將該檔股票的所有方塊包裝起來
+            html_output += f"""
+            <div style="margin-bottom: 20px; padding: 15px; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <h5 style="margin-top: 0; margin-bottom: 10px; color: #1e3c72; border-bottom: 2px solid #f0f2f6; padding-bottom: 5px;">📌 {row['標的']}</h5>
+                <div style="display: flex; flex-wrap: wrap;">
+                    {boxes_html}
+                </div>
+            </div>
+            """
+            
+        if html_output:
+            # 輸出渲染 HTML
+            st.markdown(html_output, unsafe_allow_html=True)
+        else:
+            st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-
-else:
-    st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
