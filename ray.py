@@ -582,43 +582,4 @@ if not final_data.empty:
             st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-        # --- 🔍 核心成分股 ETF 權重透視矩陣 (最終穩定版) ---
-st.markdown("---")
-st.subheader("🔍 核心成分股 ETF 權重透視矩陣")
-
-# 這是你的核心資料庫，直接在這裡修改數字即可！
-# 格式為: "股票代號": {"ETF代號": 權重數字}
-ETF_DATA = {
-    "2330.TW": {"0050.TW": 53.5, "0052.TW": 64.42},
-    "2454.TW": {"0050.TW": 4.5, "0052.TW": 7.02},
-    "3037.TW": {"00929.TW": 4.2},
-    "2317.TW": {"0050.TW": 5.1, "0052.TW": 0.47},
-    "2327.TW": {"00919.TW": 2.5},
-    "2308.TW": {"0050.TW": 3.2},
-    "2383.TW": {"00891.TW": 4.5}
-}
-
-search_stocks = {
-    "2330.TW": "台積電", "2454.TW": "聯發科", "3711.TW": "日月光投控",
-    "3037.TW": "欣興", "2303.TW": "聯電", "2317.TW": "鴻海",
-    "6147.TW": "頎邦", "4958.TW": "臻鼎-KY",
-    "2327.TW": "國巨", "2308.TW": "台達電", "2383.TW": "台光電"
-}
-
-all_etfs = ["0050.TW", "0052.TW", "00878.TW", "00919.TW", "00929.TW", "00927.TW"]
-
-# 構建矩陣數據
-matrix_data = []
-for etf in all_etfs:
-    row = {"代號": etf.replace(".TW", ""), "ETF 名稱": CUSTOM_NAME_MAP.get(etf, etf.replace(".TW", ""))}
-    for stock_code, stock_name in search_stocks.items():
-        # 如果資料庫裡有這檔 ETF 對應這檔股票的權重就讀取，沒有就顯示 "-"
-        weight = ETF_DATA.get(stock_code, {}).get(etf, 0)
-        row[stock_name] = f"{weight:.2f}%" if weight > 0 else "-"
-    matrix_data.append(row)
-
-# 顯示表格
-df_final = pd.DataFrame(matrix_data)
-st.dataframe(df_final, hide_index=True, use_container_width=True)
-else:
-    st.warning("權重數據載入失敗，請檢查 weights.json 是否存在。")
+        
