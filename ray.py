@@ -138,20 +138,23 @@ def fetch_twse_institutional_data():
 chip_data_map = fetch_twse_institutional_data()
 
 # --- 📝 專屬自訂名稱字典 ---
+# --- 📝 專屬自訂名稱字典 (擴充海量熱門 ETF 版) ---
 CUSTOM_NAME_MAP = {
-    "0050.TW": "元大台灣50",
-    "0052.TW": "富邦科技",
-    "00692.TW": "富邦治理",
-    "00713.TW": "元大低波",
-    "4958.TW": "臻鼎-KY",
-    "3037.TW": "四欣技",
-    "3481.TW": "群創",
-    "2887.TW": "台新金",
-    "00631L.TW": "元大正2",
-    "00685L.TW": "群益正2",
-    "00981A.TW": "瑤姊",
-    "00927.TW": "群益半導體",
-    "00918.TW": "大華"
+    # 你的自訂與個股
+    "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2887.TW": "台新金",
+    "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2",
+    
+    # 高股息與人氣 ETF
+    "0050.TW": "元大台灣50", "0052.TW": "富邦科技", "0056.TW": "元大高股息",
+    "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
+    "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
+    "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
+    "00881.TW": "國泰台灣5G+", "00891.TW": "中信關鍵半導體", "00900.TW": "富邦特選高股息",
+    "00692.TW": "富邦公司治理", "00850.TW": "元大臺灣ESG", "00923.TW": "群益台ESG低碳",
+    
+    # 債券與其他熱門 ETF
+    "00679B.TW": "元大美債20年", "00687B.TW": "國泰20年美債", "00937B.TW": "群益ESG投等債",
+    "00751B.TW": "元大AAA至A公司債", "00720B.TW": "元大投資級公司債", "00772B.TW": "中信高評級公司債"
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -249,11 +252,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             tk = yf.Ticker(ticker)
             
             if name == "自選標的":
-                if ticker in CUSTOM_NAME_MAP: name = CUSTOM_NAME_MAP[ticker]
+                if ticker in CUSTOM_NAME_MAP: 
+                    name = CUSTOM_NAME_MAP[ticker]
                 else:
                     try:
                         real_name = tk.info.get("shortName")
-                        if real_name: name = real_name
+                        if real_name: 
+                            # 🛡️ 版面保護盾：如果名字超過 8 個字 (特別是英文)，強制截斷並加上 ..
+                            name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                     except: pass
 
             yahoo_div_info = "-"
