@@ -582,3 +582,69 @@ if not final_data.empty:
             st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
+        # --- 🔍 新增：成分股反查 ETF 權重監控區 ---
+    st.markdown("---")
+    st.subheader("🔍 核心成分股反查 ETF 權重")
+    
+    # 讓你可以自由挑選你想查的股票（預設放你指定的這幾檔）
+    search_stocks = {
+        "2330.TW": "台積電",
+        "2454.TW": "聯發科",
+        "3711.TW": "日月光投控",
+        "2605.TW": "新興",
+        "2303.TW": "聯電",
+        "2317.TW": "鴻海",
+        "6147.TW": "頎邦",
+        "4958.TW": "臻鼎-KY"
+    }
+    
+    selected_target = st.selectbox("選擇要反查的成分股", list(search_stocks.values()))
+    target_code = [k for k, v in search_stocks.items() if v == selected_target][0]
+    
+    st.caption(f"正在分析全台熱門 ETF 中，哪些標的重倉持有【{selected_target}】...")
+    
+    # 定義你要反查的熱門 ETF 清單（從你的宇宙與字典裡撈出來）
+    etfs_to_check = [
+        "0050.TW", "0052.TW", "0056.TW", "00878.TW", "00919.TW", 
+        "00929.TW", "00713.TW", "00915.TW", "00918.TW", "00927.TW", 
+        "00939.TW", "00940.TW", "00881.TW", "00891.TW", "00900.TW"
+    ]
+    
+    match_results = []
+    
+    with st.spinner("權重資料交叉比對中..."):
+        for etf_code in etfs_to_check:
+            etf_tk = yf.Ticker(etf_code)
+            
+            # 🛡️ 暴力攔截 Yahoo Finance 的持股明細 (Holdings)
+            try:
+                holdings = etf_tk.funds_data.holdings
+                if holdings is not None and not holdings.empty:
+                    # 比對代號 (例如 2330) 是否在 ETF 的成分股明細中
+                    short_code = target_code.replace(".TW", "")
+                    
+                    # 尋找有沒有符合的成分股
+                    for _, holding in holdings.iterrows():
+                        holding_symbol = str(holding.get('symbol', ''))
+                        if short_code in holding_symbol or target_code in holding_symbol:
+                            weight = holding.get('holdingPercent', 0) * 100 # 轉為百分比
+                            if weight > 0:
+                                match_results.append({
+                                    "ETF 代號": etf_code.replace(".TW", ""),
+                                    "ETF 名稱": CUSTOM_NAME_MAP.get(etf_code, "未知 ETF"),
+                                    "持股權重": f"{weight:.2f}%"
+                                })
+            except:
+                # 萬一 yfinance 沒抓到該檔 fund 資料，跳過繼續
+                continue
+                
+    if match_results:
+        res_df = pd.DataFrame(match_results)
+        # 按照權重從高到低排序
+        res_df['sort_val'] = res_df['持股權重'].str.replace('%', '').astype(float)
+        res_df = res_df.sort_values(by='sort_val', ascending=False).drop(columns=['sort_val']).reset_index(drop=True)
+        
+        st.success(f"找到 {len(res_df)} 檔 ETF 持有 【{selected_target}】！")
+        st.table(res_df)
+    else:
+        st.info(f"目前戰情室監控的熱門 ETF 中，前十大成分股暫無揭露持有【{selected_target}】。")
