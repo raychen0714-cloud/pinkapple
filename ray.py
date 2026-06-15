@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 (絕對路徑鎖死版) ---
+# --- 💾 永久記憶系統 (絕對路徑鎖死版 + 防崩潰機制) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
@@ -20,30 +20,27 @@ def load_data():
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            st.error(f"⚠️ 資料檔案讀取錯誤，請檢查檔案格式是否損壞: {e}")
-            return { # 萬一真的壞了，這裡是你暫時的備份結構
-                "total_div": 0.0,
-                "max_price": 1000,
-                "custom_div_map": {},
-                "held_stocks": [],
-                "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
-            }
-    else:
-        # 如果檔案不存在，則建立預設值
-        return {
-            "total_div": 0.0,
-            "max_price": 1000,
-            "custom_div_map": {},
-            "held_stocks": [],
-            "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
-        }
+            st.error(f"⚠️ 資料檔案讀取錯誤，暫時使用預設值以防崩潰: {e}")
+            pass # 繼續往下回傳預設值
+            
+    return {
+        "total_div": 0.0,
+        "max_price": 1000.0,
+        "custom_div_map": {
+            "00919.TW": "1.0元",
+            "00918.TW": "1.26元",
+            "0056.TW": "1.0元" 
+        },
+        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+    }
 
 def save_data(data):
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
             f.flush() # 強制刷新記憶體到硬碟
-            os.fsync(f.fileno()) # 強制同步寫入
+            os.fsync(f.fileno()) # 強制同步寫入，防止檔案鎖定歸零
     except Exception as e:
         st.error(f"❌ 存檔失敗: {e}")
 
@@ -70,7 +67,7 @@ with col_left:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             submitted_div = st.form_submit_button("➕ 加入總額", use_container_width=True)
             if submitted_div:
-                st.session_state.app_data["total_div"] += amount_input
+                st.session_state.app_data["total_div"] += float(amount_input)
                 save_data(st.session_state.app_data)
                 st.rerun()
 
@@ -155,7 +152,6 @@ CUSTOM_NAME_MAP = {
     "00981A.TW": "瑤姊",
     "00927.TW": "群益半導體",
     "00918.TW": "大華"
-    
 }
 
 # --- 📂 1. 定義標的池 ---
@@ -193,14 +189,14 @@ else:
     selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
     active_universe = ETF_UNIVERSE
 
-# 確保這一行真的讀到了 session_state
-current_max = st.session_state.app_data.get("max_price", 1000)
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=float(current_max), step=10.0)
+# 強制將 current_max 轉為 float，避免與 number_input 的 step 衝突
+current_max = float(st.session_state.app_data.get("max_price", 1000.0))
+max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10.0)
 
-if float(max_price) != float(current_max):
-    st.session_state.app_data["max_price"] = float(max_price)
+if max_price != current_max:
+    st.session_state.app_data["max_price"] = max_price
     save_data(st.session_state.app_data)
-    st.rerun() # 立即重整  
+    st.rerun()  
 
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
@@ -286,16 +282,14 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             close_px = np.nan
             try:
                 close_px = float(tk.fast_info.last_price)
-            except:
-                pass
+            except: pass
                 
             if np.isnan(close_px) or close_px <= 0:
                 try:
                     today_live = tk.history(period="1d", interval="1m")
                     if not today_live.empty:
                         close_px = float(today_live['Close'].iloc[-1])
-                except:
-                    pass
+                except: pass
             
             if np.isnan(close_px) or close_px <= 0:
                 close_px = float(hist['Close'].iloc[-1])
@@ -320,12 +314,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if not is_manual and vol < 1000 and current_type == "個股": continue 
 
             vol_5ma = float(hist['Volume'].tail(5).mean()) / 1000
-            ma5 = float(hist['Close'].tail(5).mean())    
+            ma5 = float(hist['Close'].tail(5).mean())   
             ma20 = float(hist['Close'].tail(20).mean())  
             ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
             bias = ((close_px - ma20) / ma20) * 100  
-            px_up = close_px > prev_close               
+            px_up = close_px > prev_close                
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
             if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列" 
@@ -349,6 +343,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             if bias > 20: note = "🔥 短線過熱，留意獲利了結"
 
+            # --- 🔥 將 K 線圖示改為專業純文字解析 ---
             try:
                 O = float(hist['Open'].iloc[-1])
                 H = max(float(hist['High'].iloc[-1]), close_px)
@@ -358,7 +353,7 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 up_shadow = H - max(O, C)
                 dn_shadow = min(O, C) - L
                 tr = H - L
-                # --- 修改後的文字邏輯 ---
+                
                 k_msg = "形態平穩"
                 if tr > 0:
                     if body / tr >= 0.6:
@@ -401,41 +396,18 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
 col_menu1, col_menu2 = st.columns(2)
 
 with col_menu1:
-    with st.expander("📊 K線型態速查對照表 (點此展開/隱藏)", expanded=False):
+    with st.expander("📊 K線型態速查對照表 (純文字解析版)", expanded=False):
         st.markdown("#### 第一組：明確趨勢 (實體為主)")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown("### 🚀 純紅K (極強)")
-            st.markdown("<div style='background-color:#E53E3E; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：順勢買進或續抱。多頭全面控盤！")
-        with c2:
-            st.markdown("### 🔻 純綠K (極弱)")
-            st.markdown("<div style='background-color:#38A169; width:24px; height:50px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：避開或減碼。空方強勢表態！")
-
+        st.markdown("- **[強勢紅K]**：買盤強勁，收盤價高於開盤價且實體長。多頭格局，可續抱或加碼。")
+        st.markdown("- **[疲軟黑K]**：賣壓較大，收盤價低於開盤價。短線回檔，觀察是否跌破支撐。")
         st.markdown("---")
         st.markdown("#### 第二組：高檔遇壓 (上影線系列)")
-        c5, c6, c7, c8 = st.columns(4)
-        with c5:
-            st.markdown("### ⚠️ 紅上影 (警戒)")
-            st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：暫時續抱但不追高。有賣壓但多方仍守住底線。")
-        with c6:
-            st.markdown("### ☠️ 綠上影 (快逃)")
-            st.markdown("<div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div><div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：強烈建議減碼。賣壓極重，多軍徹底潰敗。")
-
+        st.markdown("- **[上影線(賣壓)]**：盤中曾衝高但遇壓回落，買盤力道減弱。留意上方壓力，勿追高。")
+        st.markdown("- **[長上影線(重壓)]**：出現長上影線，代表上方賣壓極重。建議減碼，嚴控風險。")
         st.markdown("---")
         st.markdown("#### 第三組：低檔有撐 (下影線系列)")
-        c9, c10, c11, c12 = st.columns(4)
-        with c9:
-            st.markdown("### 💡 紅下影 (極吉)")
-            st.markdown("<div style='background-color:#E53E3E; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：逢低買進或抱緊。買盤超強，大戶進場掃貨。")
-        with c10:
-            st.markdown("### 🛡️ 綠下影 (止跌)")
-            st.markdown("<div style='background-color:#38A169; width:24px; height:20px; margin:auto;'></div><div style='background-color:#718096; width:4px; height:30px; margin:auto;'></div>", unsafe_allow_html=True)
-            st.caption("動作：切勿恐慌殺低。有鐵板護盤，等待明日反彈確認。")
+        st.markdown("- **[下影線(買盤)]**：盤中曾殺低但有買盤接手，支撐力道強。有鐵板護盤，可逢低布局。")
+        st.markdown("- **[下影線(止跌)]**：盤中殺低後拉回，顯示賣壓漸竭。勿恐慌殺低，觀察明日反彈。")
 
 with col_menu2:
     with st.expander("🌍 國際財經與大老動態 (即時新聞)", expanded=False):
@@ -479,8 +451,6 @@ if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
-    # 拔掉 "📌 持有" 的排序，確保輸入配息時不會跳行
-    # 加上這行，強制讓打勾的標的排在最上面，接著才按成交量排序
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
@@ -496,7 +466,7 @@ if not final_data.empty:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 3. 顯示帶有顏色的 PRO 試算表 (黃金比例鎖死版，解決切字與空白問題)
+    # --- 🔥 強制鎖死寬度配置，防止配息欄位被擠掉 ---
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
@@ -504,20 +474,20 @@ if not final_data.empty:
         use_container_width=True, 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50), # 固定極小寬度
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=150), # 給定固定寬度
+            "標的": st.column_config.TextColumn("標的", width=140), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
             "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=120), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=120),
             "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=200), # 限制此欄寬度，防止它無限制擴張
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=150) # 給予足夠顯示空間
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=200), # 限制此欄寬度
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=160) # 給予足夠顯示空間
         }
     )
 
-    # 暴力比對迴圈：一有修改，立刻存檔！
+    # 暴力比對迴圈：一有修改，立刻存檔
     has_changes = False
     current_held = st.session_state.app_data.get("held_stocks", [])
 
@@ -544,6 +514,45 @@ if not final_data.empty:
         save_data(st.session_state.app_data)       
         st.session_state.show_save_success = True  
         st.rerun()
+
+    # --- 📊 新增：持股戰績檢閱器 ---
+    st.markdown("---")
+    st.subheader("🎯 持股區間戰績檢閱")
+    col_perf1, col_perf2 = st.columns([2, 5])
+
+    with col_perf1:
+        perf_period = st.selectbox("選擇計算區間", ["1個月", "3個月", "6個月"], index=1)
+        period_map = {"1個月": "1mo", "3個月": "3mo", "6個月": "6mo"}
+
+    # 篩選出所有打勾「持有」的標的
+    held_data = final_data[final_data['📌 持有'] == True]
+
+    if not held_data.empty:
+        perf_results = []
+        for _, row in held_data.iterrows():
+            tk = yf.Ticker(row['原始代號'])
+            hist = tk.history(period=period_map[perf_period])
+            if len(hist) >= 2:
+                start_px = float(hist['Close'].iloc[0])
+                end_px = float(hist['Close'].iloc[-1])
+                perf_pct = ((end_px - start_px) / start_px) * 100
+                
+                perf_str = f"{perf_pct:+.2f}%"
+                perf_results.append({"標的": row['標的'], "區間漲跌幅": perf_str})
+        
+        perf_df = pd.DataFrame(perf_results)
+        
+        def color_perf(val):
+            pct = float(val.replace('%', ''))
+            return 'color: #ff4b4b; font-weight: bold;' if pct > 0 else 'color: #09ab3b; font-weight: bold;'
+        
+        if not perf_df.empty:
+            if hasattr(perf_df.style, "map"):
+                st.table(perf_df.style.map(color_perf, subset=['區間漲跌幅']))
+            else:
+                st.table(perf_df.style.applymap(color_perf, subset=['區間漲跌幅']))
+    else:
+        st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
 
 else:
     st.info("請確認手動輸入代號後是否已按下鍵盤上的『確認/Enter』鍵，或放寬篩選產業。")
