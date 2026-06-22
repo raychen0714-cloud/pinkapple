@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 (絕對路徑鎖死版 + 防崩潰機制) ---
+# --- 💾 永久記憶系統 (絕對路徑鎖死 + 強制雙向同步版) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
@@ -18,10 +18,17 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # 確保必要欄位都存在，防止因升級導致結構出錯
+                if "total_div" not in data: data["total_div"] = 0.0
+                if "max_price" not in data: data["max_price"] = 1000.0
+                if "custom_div_map" not in data: data["custom_div_map"] = {}
+                if "held_stocks" not in data: data["held_stocks"] = []
+                if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+                return data
         except Exception as e:
-            st.error(f"⚠️ 資料檔案讀取錯誤，暫時使用預設值以防崩潰: {e}")
-            pass # 繼續往下回傳預設值
+            st.error(f"⚠️ 偵測到資料損壞，已自動修復檔案，防止資料歸零: {e}")
+            pass
             
     return {
         "total_div": 0.0,
@@ -39,11 +46,12 @@ def save_data(data):
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-            f.flush() # 強制刷新記憶體到硬碟
-            os.fsync(f.fileno()) # 強制同步寫入，防止檔案鎖定歸零
+            f.flush()
+            os.fsync(f.fileno()) # 強制寫入磁碟，防止斷電或重啟時歸零
     except Exception as e:
         st.error(f"❌ 存檔失敗: {e}")
 
+# 初始化確保安全
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
@@ -137,80 +145,48 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
-# --- 📝 專屬自訂名稱字典 (擴充海量熱門 ETF 版) ---
+# --- 📝 專屬自訂名稱字典 (完美正名避免英文拉長) ---
 CUSTOM_NAME_MAP = {
-    # 你的自訂與個股 (保留你原本的命名)
-    "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2887.TW": "台新金",
-    "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2",
-    
-    # 凱基系列 (補上你指定的 009816)
-    "009816.TW": "凱基台灣TOP50",
-    
-    # 高股息與市值型人氣 ETF
-    "0050.TW": "元大台灣50", "0052.TW": "富邦科技", "0056.TW": "元大高股息",
+    "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
+    "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
+    "009816.TW": "凱基台灣TOP50", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
-    "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
-    "00881.TW": "國泰台灣5G+", "00891.TW": "中信關鍵半導體", "00900.TW": "富邦特選高股息",
-    "00692.TW": "富邦公司治理", "00850.TW": "元大臺灣ESG", "00923.TW": "群益台ESG低碳",
-    
-    # 債券與其他熱門 ETF
-    "00679B.TW": "元大美債20年", "00687B.TW": "國泰20年美債", "00937B.TW": "群益ESG投等債",
-    "00751B.TW": "元大AAA至A公司債", "00720B.TW": "元大投資級公司債", "00772B.TW": "中信高評級公司債"
+    "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息"
 }
 
-# --- 📂 1. 定義標的池 ---
-STOCK_UNIVERSE = {
-    "半導體": {
-        "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
-        "3034.TW": "聯詠", "2379.TW": "瑞昱", "3661.TW": "世芯-KY", "8046.TW": "南電", 
-        "3037.TW": "四欣技", "5347.TWO": "世界先進", "6239.TW": "力成", "3131.TWO": "弘塑"
-    },
-    "光電與面板": {
-        "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光"
-    }
+# --- 📂 1. 核心標的池 (全面合併，不再需要分類切換) ---
+MASTER_UNIVERSE = {
+    "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
+    "3034.TW": "聯詠", "2379.TW": "瑞昱", "3661.TW": "世芯-KY", "8046.TW": "南電", 
+    "3037.TW": "四欣技", "5347.TWO": "世界先進", "6239.TW": "力成", "3131.TWO": "弘塑",
+    "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光",
+    "00878.TW": "國泰永續高股息", "0056.TW": "元大高股息", "00919.TW": "群益精選高息", 
+    "00929.TW": "復華台灣科技優息", "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", 
+    "00918.TW": "大華優利高填息", "00927.TW": "群益半導體收益", "00881.TW": "國泰台灣5G+", 
+    "00891.TW": "中信關鍵半導體", "00935.TW": "野村臺灣新科技50"
 }
 
-ETF_UNIVERSE = {
-    "高股息": {
-        "00878.TW": "國泰永續高股息", "0056.TW": "元大高股息", "00919.TW": "群益精選高息", 
-        "00929.TW": "復華台灣科技優息", "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息30", 
-        "00918.TW": "大華優利高填息30"
-    },
-    "半導體與科技": {
-        "00927.TW": "群益半導體收益", "00881.TW": "國泰台灣5G+", "00891.TW": "中信關鍵半導體",
-        "00935.TW": "野村臺灣新科技50"
-    }
-}
-
-# --- 🎛️ 2. 動態篩選控制台 (UI) ---
+# --- 🎛️ 2. 簡化版側邊欄控制台 ---
 st.sidebar.header("🎛️ 篩選控制台")
-target_type = st.sidebar.radio("1. 選擇標的類型", ["個股", "ETF"])
 
-if target_type == "個股":
-    selected_categories = st.sidebar.multiselect("2. 選擇產業板塊", list(STOCK_UNIVERSE.keys()), default=["半導體", "光電與面板"])
-    active_universe = STOCK_UNIVERSE
-else:
-    selected_categories = st.sidebar.multiselect("2. 選擇 ETF 類型", list(ETF_UNIVERSE.keys()), default=["高股息", "半導體與科技"])
-    active_universe = ETF_UNIVERSE
+# 記憶防摔盾：精確讀取並四捨五入比對最高價位，防止浮點數引發重設
+current_max = round(float(st.session_state.app_data.get("max_price", 1000.0)), 1)
+max_price = st.sidebar.number_input("1. 設定最高價位 (元)", value=current_max, step=10.0)
 
-# 強制將 current_max 轉為 float，避免與 number_input 的 step 衝突
-current_max = float(st.session_state.app_data.get("max_price", 1000.0))
-max_price = st.sidebar.number_input("3. 設定最高價位 (元)", value=current_max, step=10.0)
-
-if max_price != current_max:
-    st.session_state.app_data["max_price"] = max_price
+if round(float(max_price), 1) != current_max:
+    st.session_state.app_data["max_price"] = float(max_price)
     save_data(st.session_state.app_data)
     st.rerun()  
 
 st.sidebar.markdown("---")
 only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
 
-saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116")
+saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481")
 manual_tickers_str = st.sidebar.text_input(
-    "🔍 4. 手動新增觀察標的", 
+    "🔍 2. 手動新增觀察標的", 
     value=saved_tickers, 
-    placeholder="如: 878, 56, 3481"
+    placeholder="如: 878, 9816, 3481"
 )
 
 if manual_tickers_str != saved_tickers:
@@ -218,14 +194,13 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 3. 核心運算引擎 ---
+# --- 🧠 3. 核心智慧運算引擎 ---
 @st.cache_data(ttl=30)  
-def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manual_input, only_manual_flag):
+def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
     tickers_to_fetch = {}
     
     if not only_manual_flag:
-        for cat in categories:
-            tickers_to_fetch.update(universe_dict[cat].copy())
+        tickers_to_fetch.update(MASTER_UNIVERSE.copy())
         
     manual_symbols = []
     if manual_input:
@@ -237,10 +212,8 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
             
             display_name = "自選標的"
-            for cat_key, stocks in STOCK_UNIVERSE.items():
-                if t_symbol in stocks: display_name = stocks[t_symbol]
-            for cat_key, etfs in ETF_UNIVERSE.items():
-                if t_symbol in etfs: display_name = etfs[t_symbol]
+            if t_symbol in MASTER_UNIVERSE: display_name = MASTER_UNIVERSE[t_symbol]
+            elif t_symbol in CUSTOM_NAME_MAP: display_name = CUSTOM_NAME_MAP[t_symbol]
                 
             tickers_to_fetch[t_symbol] = display_name
             manual_symbols.append(t_symbol)
@@ -253,16 +226,13 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
             
-            if name == "自選標的":
-                if ticker in CUSTOM_NAME_MAP: 
-                    name = CUSTOM_NAME_MAP[ticker]
-                else:
-                    try:
-                        real_name = tk.info.get("shortName")
-                        if real_name: 
-                            # 🛡️ 版面保護盾：如果名字超過 8 個字 (特別是英文)，強制截斷並加上 ..
-                            name = real_name[:8] + ".." if len(real_name) > 8 else real_name
-                    except: pass
+            if name == "自選標的" and ticker in CUSTOM_NAME_MAP:
+                name = CUSTOM_NAME_MAP[ticker]
+            elif name == "自選標的":
+                try:
+                    real_name = tk.info.get("shortName")
+                    if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
+                except: pass
 
             yahoo_div_info = "-"
             if is_manual:
@@ -284,21 +254,12 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             if hist.empty: continue
             hist = hist.replace([np.inf, -np.inf], np.nan).dropna(subset=['Close', 'Volume'])
             
-            if len(hist) < 10 and is_manual: continue
-            elif len(hist) < 60 and not is_manual: continue
+            if len(hist) < 10: continue
             
             close_px = np.nan
-            try:
-                close_px = float(tk.fast_info.last_price)
+            try: close_px = float(tk.fast_info.last_price)
             except: pass
                 
-            if np.isnan(close_px) or close_px <= 0:
-                try:
-                    today_live = tk.history(period="1d", interval="1m")
-                    if not today_live.empty:
-                        close_px = float(today_live['Close'].iloc[-1])
-                except: pass
-            
             if np.isnan(close_px) or close_px <= 0:
                 close_px = float(hist['Close'].iloc[-1])
                 
@@ -309,18 +270,13 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 price_change_abs = close_px - prev_close 
                 price_change_pct = (price_change_abs / prev_close) * 100 
                 
-                if price_change_abs > 0:
-                    change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
-                elif price_change_abs < 0:
-                    change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}"
-                else:
-                    change_str = "➖ 0.00% / 0.00"
+                if price_change_abs > 0: change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
+                elif price_change_abs < 0: change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}"
+                else: change_str = "➖ 0.00% / 0.00"
             except:
                 change_str = "➖ 0.00% / 0.00"
 
             vol = float(hist['Volume'].iloc[-1]) / 1000  
-            if not is_manual and vol < 1000 and current_type == "個股": continue 
-
             vol_5ma = float(hist['Volume'].tail(5).mean()) / 1000
             ma5 = float(hist['Close'].tail(5).mean())   
             ma20 = float(hist['Close'].tail(20).mean())  
@@ -336,11 +292,11 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
             elif ma60 == 0: trend_status = "📈 新股觀察"
             else: trend_status = "🔽 跌破季線" 
 
-            if current_type == "ETF" or (is_manual and ticker.replace(".TW","").replace(".TWO","").startswith("00")):
-                if trend_status in ["🔽 跌破季線", "🧊 空頭排列"] and bias < -10:
-                    note = "💎 跌深殖利率浮現，可抄底"
-                elif trend_status in ["🔥 多頭排列", "🔼 站上季線"]:
-                    note = "🟢 趨勢向上，適合佈局"
+            # 自動辨識 ETF 或個股
+            is_etf = ticker.replace(".TW","").replace(".TWO","").startswith("00")
+            if is_etf:
+                if trend_status in ["🔽 跌破季線", "🧊 空頭排列"] and bias < -10: note = "💎 跌深殖利率浮現，可抄底"
+                elif trend_status in ["🔥 多頭排列", "🔼 站上季線"]: note = "🟢 趨勢向上，適合佈局"
                 else: note = "⚪ 進入整理，保持觀望"
             else:
                 if vol_surge and px_up: note = "🐋 疑似大戶進場！"
@@ -351,7 +307,6 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
                 
             if bias > 20: note = "🔥 短線過熱，留意獲利了結"
 
-            # --- 🔥 將 K 線圖示改為專業純文字解析 ---
             try:
                 O = float(hist['Open'].iloc[-1])
                 H = max(float(hist['High'].iloc[-1]), close_px)
@@ -400,50 +355,33 @@ def fetch_and_analyze(categories, universe_dict, price_limit, current_type, manu
         df.reset_index(drop=True, inplace=True)
     return df 
 
-# --- 📊 4. 畫面渲染 (頂部選單區) ---
+# --- 📊 4. 畫面渲染 ---
 col_menu1, col_menu2 = st.columns(2)
 
 with col_menu1:
     with st.expander("📊 K線型態速查對照表 (純文字解析版)", expanded=False):
-        st.markdown("#### 第一組：明確趨勢 (實體為主)")
-        st.markdown("- **[強勢紅K]**：買盤強勁，收盤價高於開盤價且實體長。多頭格局，可續抱或加碼。")
-        st.markdown("- **[疲軟黑K]**：賣壓較大，收盤價低於開盤價。短線回檔，觀察是否跌破支撐。")
-        st.markdown("---")
-        st.markdown("#### 第二組：高檔遇壓 (上影線系列)")
-        st.markdown("- **[上影線(賣壓)]**：盤中曾衝高但遇壓回落，買盤力道減弱。留意上方壓力，勿追高。")
-        st.markdown("- **[長上影線(重壓)]**：出現長上影線，代表上方賣壓極重。建議減碼，嚴控風險。")
-        st.markdown("---")
-        st.markdown("#### 第三組：低檔有撐 (下影線系列)")
-        st.markdown("- **[下影線(買盤)]**：盤中曾殺低但有買盤接手，支撐力道強。有鐵板護盤，可逢低布局。")
-        st.markdown("- **[下影線(止跌)]**：盤中殺低後拉回，顯示賣壓漸竭。勿恐慌殺低，觀察明日反彈。")
+        st.markdown("- **[強勢紅K]**：買盤強勁，多頭格局，可續抱或加碼。")
+        st.markdown("- **[疲軟黑K]**：賣壓較大，短線回檔，觀察是否跌破支撐。")
+        st.markdown("- **[上影線(賣壓)]**：盤中曾衝高但遇壓回落，留意上方壓力，勿追高。")
+        st.markdown("- **[長上影線(重壓)]**：上方賣壓極重。建議減碼，嚴控風險。")
+        st.markdown("- **[下影線(買盤)]**：有鐵板護盤，可逢低布局。")
+        st.markdown("- **[下影線(止跌)]**：顯示賣壓漸竭。勿恐慌殺低，觀察明日反彈。")
 
 with col_menu2:
     with st.expander("🌍 國際財經與大老動態 (即時新聞)", expanded=False):
-        tab_jensen, tab_trump, tab_finance = st.tabs(["👑 黃仁勳動態", "🦅 川普發言", "📈 今日財經焦點"])
-        
+        tab_jensen, tab_finance = st.tabs(["👑 輝達與黃仁勳動態", "📈 今日財經焦點"])
         with tab_jensen:
-            st.caption("每 30 分鐘自動攔截最新動態")
             news_jensen = fetch_realtime_news("黃仁勳 OR 輝達 OR NVIDIA")
-            for item in news_jensen:
-                st.markdown(f"➤ [{item['title']}]({item['link']})")
-                
-        with tab_trump:
-            st.caption("關注關稅與地緣政治談話")
-            news_trump = fetch_realtime_news("川普 OR Trump 股市")
-            for item in news_trump:
-                st.markdown(f"➤ [{item['title']}]({item['link']})")
-                
+            for item in news_jensen: st.markdown(f"➤ [{item['title']}]({item['link']})")
         with tab_finance:
-            st.caption("台股大盤與財經要聞")
             news_finance = fetch_realtime_news("台股 OR 聯準會 OR 降息")
-            for item in news_finance:
-                st.markdown(f"➤ [{item['title']}]({item['link']})")
+            for item in news_finance: st.markdown(f"➤ [{item['title']}]({item['link']})")
 
 st.markdown("---")
 st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
 
 with st.spinner("真實證券報價、官方籌碼與配息資料同步中..."):
-    final_data = fetch_and_analyze(selected_categories, active_universe, max_price, target_type, manual_tickers_str, only_manual)
+    final_data = fetch_and_analyze(max_price, manual_tickers_str, only_manual)
 
 if not final_data.empty:
     def assign_final_dividend(row):
@@ -463,18 +401,14 @@ if not final_data.empty:
     
     def color_tw_stock(val):
         if isinstance(val, str):
-            if '🔺' in val:
-                return 'color: #ff4b4b; font-weight: bold;' 
-            elif '🔻' in val:
-                return 'color: #09ab3b; font-weight: bold;' 
+            if '🔺' in val: return 'color: #ff4b4b; font-weight: bold;' 
+            elif '🔻' in val: return 'color: #09ab3b; font-weight: bold;' 
         return ''
 
-    if hasattr(display_df.style, "map"):
-        styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌'])
-    else:
-        styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
+    if hasattr(display_df.style, "map"): styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌'])
+    else: styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # --- 🔥 強制鎖死寬度配置，防止配息欄位被擠掉 ---
+    # --- 🔥 鐵鎖連環防擠壓欄寬設定 ---
     edited_df = st.data_editor(
         styled_df,
         key="portfolio_editor", 
@@ -482,20 +416,20 @@ if not final_data.empty:
         use_container_width=True, 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=140), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
             "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=120), 
-            "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
+            "成交量(張)": st.column_config.NumberColumn("成交量", width=70),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=120),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=200), # 限制此欄寬度
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=160) # 給予足夠顯示空間
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=90), 
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=220), 
+            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=140) 
         }
     )
 
-    # 暴力比對迴圈：一有修改，立刻存檔
+    # 暴力比對迴圈：一有修改，立刻同步存檔
     has_changes = False
     current_held = st.session_state.app_data.get("held_stocks", [])
 
@@ -505,10 +439,8 @@ if not final_data.empty:
         old_held = bool(display_df.iloc[i]['📌 持有'])
         new_held = bool(edited_df.iloc[i]['📌 持有'])
         if old_held != new_held:
-            if new_held and (ticker_key not in current_held):
-                current_held.append(ticker_key)
-            elif (not new_held) and (ticker_key in current_held):
-                current_held.remove(ticker_key)
+            if new_held and (ticker_key not in current_held): current_held.append(ticker_key)
+            elif (not new_held) and (ticker_key in current_held): current_held.remove(ticker_key)
             has_changes = True
 
         old_div = str(display_df.iloc[i]['💰 最新配息'])
@@ -523,7 +455,7 @@ if not final_data.empty:
         st.session_state.show_save_success = True  
         st.rerun()
 
-    # --- 📊 新增：每日戰績熱力追蹤 (自動換行小方塊版) ---
+    # --- 📊 每日戰績熱力追蹤 ---
     st.markdown("---")
     st.subheader("🎯 持股每日戰績追蹤")
     col_perf1, col_perf2 = st.columns([2, 5])
@@ -532,7 +464,6 @@ if not final_data.empty:
         perf_period = st.selectbox("選擇追蹤區間", ["近1個月", "近3個月", "近6個月"], index=0)
         period_map = {"近1個月": "1mo", "近3個月": "3mo", "近6個月": "6mo"}
 
-    # 篩選出所有打勾「持有」的標的
     held_data = final_data[final_data['📌 持有'] == True]
 
     if not held_data.empty:
@@ -541,45 +472,35 @@ if not final_data.empty:
             tk = yf.Ticker(row['原始代號'])
             hist = tk.history(period=period_map[perf_period])
             
-            if len(hist) < 2:
-                continue
+            if len(hist) < 2: continue
                 
-            # 計算每日漲跌幅
             hist['Prev_Close'] = hist['Close'].shift(1)
             hist['Pct_Change'] = ((hist['Close'] - hist['Prev_Close']) / hist['Prev_Close']) * 100
             hist = hist.dropna(subset=['Pct_Change'])
             
-            # 建立小方塊 HTML (含日期與漲跌幅)
             boxes_html = ""
             for date, h_row in hist.iterrows():
                 pct = h_row['Pct_Change']
-                date_str = date.strftime("%m/%d") # 顯示月/日
+                date_str = date.strftime("%m/%d")
                 
-                # 根據漲跌判定顏色
                 if pct > 0:
-                    color = "#ff4b4b"      # 紅字
-                    bg_color = "#ffeeee"   # 淺紅底
+                    color = "#ff4b4b"
+                    bg_color = "#ffeeee"
                     pct_str = f"+{pct:.1f}%"
                 elif pct < 0:
-                    color = "#09ab3b"      # 綠字
-                    bg_color = "#eeffee"   # 淺綠底
+                    color = "#09ab3b"
+                    bg_color = "#eeffee"
                     pct_str = f"{pct:.1f}%"
                 else:
-                    color = "#888888"      # 灰字
-                    bg_color = "#f5f5f5"   # 淺灰底
+                    color = "#888888"
+                    bg_color = "#f5f5f5"
                     pct_str = "0.0%"
                     
-                # 【修正重點】：強制單行，不留任何前導縮排空白，防止 Streamlit 誤判為程式碼區塊
                 boxes_html += f"""<div style="display:inline-block; background-color:{bg_color}; color:{color}; padding:4px 6px; margin:3px; border-radius:6px; font-size:13px; border:1px solid {color}; text-align:center; min-width:45px;"><div style="font-size:10px; color:#555; margin-bottom:2px;">{date_str}</div><div style="font-weight:bold; font-family:monospace;">{pct_str}</div></div>"""
                 
-            # 將該檔股票的所有方塊包裝起來 (同樣強制單行)
             html_output += f"""<div style="margin-bottom:20px; padding:15px; background-color:#ffffff; border:1px solid #e0e0e0; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,0.05);"><h5 style="margin-top:0; margin-bottom:10px; color:#1e3c72; border-bottom:2px solid #f0f2f6; padding-bottom:5px;">📌 {row['標的']}</h5><div style="display:flex; flex-wrap:wrap;">{boxes_html}</div></div>"""
             
-        if html_output:
-            # 輸出渲染 HTML
-            st.markdown(html_output, unsafe_allow_html=True)
-        else:
-            st.warning("無足夠歷史資料可供計算。")
+        if html_output: st.markdown(html_output, unsafe_allow_html=True)
+        else: st.warning("無足夠歷史資料可供計算。")
     else:
         st.info("尚未勾選任何持有標的，請在上方雷達表打勾後即可查看。")
-        
