@@ -20,16 +20,14 @@ def load_data():
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if "total_div" not in data: data["total_div"] = 0.0
-                if "max_price" not in data: data["max_price"] = 1000.0
                 if "custom_div_map" not in data: data["custom_div_map"] = {}
                 if "held_stocks" not in data: data["held_stocks"] = []
                 if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
                 return data
-        except Exception as e: pass
+        except: pass
             
     return {
         "total_div": 0.0,
-        "max_price": 1000.0,
         "custom_div_map": {"00919.TW": "1.0元", "00918.TW": "1.26元", "0056.TW": "1.0元"},
         "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
@@ -41,14 +39,13 @@ def save_data(data):
             json.dump(data, f, ensure_ascii=False, indent=4)
             f.flush()
             os.fsync(f.fileno())
-    except Exception as e:
-        st.error(f"❌ 存檔失敗: {e}")
+    except: pass
 
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# --- ⚡ 零延遲引擎：證交所官方 API (🚀 修正分批抓取防截斷) ---
-@st.cache_data(ttl=5) # 5秒快取，防止被鎖 IP
+# --- ⚡ 零延遲引擎：證交所官方 API (強化防禦 0 元異常) ---
+@st.cache_data(ttl=5)
 def fetch_twse_realtime(tickers):
     ex_ch_list = []
     for t in tickers:
@@ -59,23 +56,16 @@ def fetch_twse_realtime(tickers):
     if not ex_ch_list: return {}
 
     results = {}
-    # 偽裝成真實瀏覽器，降低被擋機率
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
         session = requests.Session()
-        # 取得通行證 Session
         session.get("https://mis.twse.com.tw/stock/index.jsp", headers=headers, timeout=5)
         
-        # 🚀 關鍵修復：將請求分批 (每批 15 檔)，防止 URL 過長被官方直接截斷
         chunk_size = 15
         for i in range(0, len(ex_ch_list), chunk_size):
             chunk = ex_ch_list[i:i + chunk_size]
             url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={'|'.join(chunk)}&json=1&delay=0"
-            
             res = session.get(url, headers=headers, timeout=5)
             data = res.json()
             
@@ -84,15 +74,15 @@ def fetch_twse_realtime(tickers):
                     code = item.get('c')
                     ex = item.get('ex')
                     
-                    # 處理 'z' (現價) 為 '-' 的情況 (可能遇到試撮或暫停交易)
-                    z_val = item.get('z', '-')
-                    y_val = item.get('y', '0')
+                    # 強制轉字串並移除千分位逗號，防止 Float 轉換失敗
+                    z_val = str(item.get('z', '-')).replace(',', '')
+                    y_val = str(item.get('y', '0')).replace(',', '')
                     
                     if z_val != '-':
                         price = float(z_val)
                     else:
-                        # 退而求其次，看有沒有買賣報價
-                        b_val = item.get('b', '').split('_')[0]
+                        # 漲停或試撮合期間可能沒有 z，嘗試抓買賣報價或退回昨收
+                        b_val = str(item.get('b', '')).split('_')[0].replace(',', '')
                         if b_val and b_val != '-': price = float(b_val)
                         else: price = float(y_val)
                         
@@ -100,16 +90,11 @@ def fetch_twse_realtime(tickers):
                     vol = int(item.get('v', 0))
                     
                     original_ticker = f"{code}.TW" if ex == 'tse' else f"{code}.TWO"
-                    results[original_ticker] = {
-                        "price": price,
-                        "prev_close": prev_close,
-                        "vol": vol
-                    }
+                    if price > 0: # 確保絕對不會回傳 0 元
+                        results[original_ticker] = {"price": price, "prev_close": prev_close, "vol": vol}
                 except: continue
-                
         return results
-    except Exception as e:
-        return results # 若中途被擋，把成功抓到的部分回傳
+    except: return results
 
 # --- 💰 存股配息金庫 ---
 st.markdown("### 💰 PRO 級存股配息金庫")
@@ -131,9 +116,9 @@ with col_left:
 with col_right:
     st.markdown("#### 🏆 總領配息累計")
     st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.app_data['total_div']:,.0f}</h1>", unsafe_allow_html=True)
-    with st.expander("🛠️ 不小心輸入錯誤？點此手動校正總額"):
-        correct_val = st.number_input("直接輸入正確的總金額", value=int(st.session_state.app_data['total_div']), step=1000)
-        if st.button("💾 強制覆寫總額", use_container_width=True):
+    with st.expander("🛠️ 手動校正總額"):
+        correct_val = st.number_input("輸入正確總金額", value=int(st.session_state.app_data['total_div']), step=1000)
+        if st.button("💾 覆寫總額", use_container_width=True):
             st.session_state.app_data["total_div"] = float(correct_val)
             save_data(st.session_state.app_data)
             st.rerun()
@@ -153,7 +138,7 @@ def fetch_twse_institutional_data():
                 fi_net = float(item.get("ForeignInvestorBuySellAmount", 0).replace(",", ""))
                 it_net = float(item.get("InvestmentTrustBuySellAmount", 0).replace(",", ""))
             except: fi_net, it_net = 0, 0
-
+            
             threshold = 1000000
             if fi_net > threshold and it_net > threshold: status = "🔥 外資投信聯手大買"
             elif fi_net < -threshold and it_net < -threshold: status = "🚨 外資投信聯手倒貨"
@@ -181,62 +166,36 @@ CUSTOM_NAME_MAP = {
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息"
 }
 
-MASTER_UNIVERSE = {
-    "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "3711.TW": "日月光投控", 
-    "3034.TW": "聯詠", "2379.TW": "瑞昱", "3661.TW": "世芯-KY", "8046.TW": "南電", 
-    "3037.TW": "四欣技", "5347.TWO": "世界先進", "6239.TW": "力成", "3131.TWO": "弘塑",
-    "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶", "3008.TW": "大立光",
-    "00878.TW": "國泰永續高股息", "0056.TW": "元大高股息", "00919.TW": "群益精選高息", 
-    "00929.TW": "復華台灣科技優息", "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", 
-    "00918.TW": "大華優利高填息", "00927.TW": "群益半導體收益", "00881.TW": "國泰台灣5G+"
-}
-
-st.sidebar.header("🎛️ 篩選控制台")
-current_max = round(float(st.session_state.app_data.get("max_price", 1000.0)), 1)
-max_price = st.sidebar.number_input("1. 設定最高價位 (元)", value=current_max, step=10.0)
-
-if round(float(max_price), 1) != current_max:
-    st.session_state.app_data["max_price"] = float(max_price)
-    save_data(st.session_state.app_data)
-    st.rerun()  
-
-st.sidebar.markdown("---")
-only_manual = st.sidebar.checkbox("🎯 只看自選標的 (隱藏系統清單)", value=False)
+# --- 🎛️ 極簡側邊欄：只保留自選輸入 ---
+st.sidebar.header("🎛️ 觀察清單控制台")
 saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481")
-manual_tickers_str = st.sidebar.text_input("🔍 2. 手動新增觀察標的", value=saved_tickers)
+manual_tickers_str = st.sidebar.text_input("🔍 手動輸入股票/ETF代號 (用逗號隔開)", value=saved_tickers)
 
 if manual_tickers_str != saved_tickers:
     st.session_state.app_data["manual_tickers"] = manual_tickers_str
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 雙重融核運算引擎 (🚀 修正 Fallback 防歸零) ---
+# --- 🧠 運算引擎：只處理你輸入的標的 ---
 @st.cache_data(ttl=30)  
-def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
+def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
-    if not only_manual_flag: tickers_to_fetch.update(MASTER_UNIVERSE.copy())
-        
-    manual_symbols = []
     if manual_input:
         clean_input = manual_input.replace("，", ",").replace("、", ",").replace(" ", ",")
         for t in [t.strip().upper() for t in clean_input.split(",") if t.strip()]:
             if len(t) <= 3 and t.isdigit(): t = f"00{t}"
             t_symbol = f"{t}.TW" if not (t.endswith(".TW") or t.endswith(".TWO")) else t
-            name = MASTER_UNIVERSE.get(t_symbol, CUSTOM_NAME_MAP.get(t_symbol, "自選標的"))
+            name = CUSTOM_NAME_MAP.get(t_symbol, "自選標的")
             tickers_to_fetch[t_symbol] = name
-            manual_symbols.append(t_symbol)
     
     if not tickers_to_fetch: return pd.DataFrame()
     
-    # ⚡ 先透過官方 API 一次抓取所有即時報價
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
     for ticker, name in tickers_to_fetch.items():
         try:
-            is_manual = (ticker in manual_symbols)
             tk = yf.Ticker(ticker)
-            
             if name == "自選標的":
                 try: 
                     real_name = tk.info.get("shortName")
@@ -244,46 +203,35 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
                 except: pass
 
             yahoo_div_info = "-"
-            if is_manual:
-                try:
-                    divs = tk.dividends
-                    if not divs.empty:
-                        yahoo_div_info = f"{round(float(divs.iloc[-1]), 3)}元 ({divs.index[-1].strftime('%Y-%m-%d')})"
-                except: pass
+            try:
+                divs = tk.dividends
+                if not divs.empty:
+                    yahoo_div_info = f"{round(float(divs.iloc[-1]), 3)}元 ({divs.index[-1].strftime('%Y-%m-%d')})"
+            except: pass
 
             hist = tk.history(period="6mo", auto_adjust=False)
-            if hist.empty and is_manual and ticker.endswith(".TW"):
+            if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
                 tk = yf.Ticker(ticker_two)
                 hist = tk.history(period="6mo", auto_adjust=False)
                 if not hist.empty: ticker = ticker_two 
                     
             if hist.empty or len(hist) < 10: continue
+            
+            # 向前填充缺失值，避免計算時出現 NaN
+            hist = hist.ffill()
 
-            # ⚡ 注入證交所零延遲報價 (與強化的 Fallback)
             rt_info = realtime_data.get(ticker)
-            if rt_info and rt_info['prev_close'] > 0:
+            if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 close_px = rt_info['price']
                 prev_close = rt_info['prev_close']
                 vol = rt_info['vol']
             else:
-                # 備用方案：若官方斷線或防爬蟲阻擋，安全退回 yfinance 以防歸零
-                try:
-                    close_px = float(tk.fast_info.last_price)
-                    if np.isnan(close_px) or close_px <= 0:
-                        close_px = float(hist['Close'].iloc[-1])
-                except:
-                    close_px = float(hist['Close'].iloc[-1])
-                    
-                try:
-                    prev_close = float(hist['Close'].iloc[-2])
-                except:
-                    prev_close = close_px
-                    
+                # 若官方 API 阻擋，退回歷史資料，且確保絕對不會有 0
+                close_px = float(hist['Close'].iloc[-1])
+                prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close_px
                 vol = float(hist['Volume'].iloc[-1]) / 1000
                 
-            if not is_manual and close_px > price_limit: continue
-            
             price_change_abs = close_px - prev_close 
             price_change_pct = (price_change_abs / prev_close) * 100 if prev_close > 0 else 0
             
@@ -319,7 +267,6 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
 
             code_only = ticker.replace(".TW", "").replace(".TWO","")
             results.append({
-                "is_manual": is_manual,
                 "原始代號": ticker,  
                 "代號": code_only, 
                 "名稱": name,
@@ -335,11 +282,12 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
             
     df = pd.DataFrame(results)
     if not df.empty:
+        # 改為按照你輸入的順序顯示，或者按成交量排序，這裡保持按成交量排序
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
     return df 
 
 st.markdown("---")
-st.subheader(f"🔍 PRO 觀察雷達 (最高價 {max_price} 元以下)")
+st.subheader("🔍 PRO 觀察雷達 (專屬自選清單)")
 col1, col2 = st.columns([8, 2])
 with col2:
     if st.button("🔄 強制刷新零延遲報價", use_container_width=True):
@@ -347,7 +295,7 @@ with col2:
         st.rerun()
 
 with st.spinner("官方 MIS 零延遲系統連接中..."):
-    final_data = fetch_and_analyze(max_price, manual_tickers_str, only_manual)
+    final_data = fetch_and_analyze(manual_tickers_str)
 
 if not final_data.empty:
     def assign_final_dividend(row):
@@ -362,6 +310,8 @@ if not final_data.empty:
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
+    
+    # 將持有打勾的排在最前面
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
