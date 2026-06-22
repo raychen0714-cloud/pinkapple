@@ -25,8 +25,7 @@ def load_data():
                 if "held_stocks" not in data: data["held_stocks"] = []
                 if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
                 return data
-        except Exception as e:
-            pass
+        except Exception as e: pass
             
     return {
         "total_div": 0.0,
@@ -48,8 +47,8 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# --- ⚡ 零延遲引擎：證交所/櫃買中心官方即時 API ---
-@st.cache_data(ttl=5) # 只快取 5 秒，確保幾乎零延遲
+# --- ⚡ 零延遲引擎：證交所官方 API (🚀 修正分批抓取防截斷) ---
+@st.cache_data(ttl=5) # 5秒快取，防止被鎖 IP
 def fetch_twse_realtime(tickers):
     ex_ch_list = []
     for t in tickers:
@@ -59,36 +58,58 @@ def fetch_twse_realtime(tickers):
 
     if not ex_ch_list: return {}
 
-    # 證交所 API 要求必須先有 Session 才能抓即時報價，防止機器人
-    url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={'|'.join(ex_ch_list)}&json=1&delay=0"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    results = {}
+    # 偽裝成真實瀏覽器，降低被擋機率
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
+    
     try:
         session = requests.Session()
+        # 取得通行證 Session
         session.get("https://mis.twse.com.tw/stock/index.jsp", headers=headers, timeout=5)
-        res = session.get(url, headers=headers, timeout=5)
-        data = res.json()
         
-        results = {}
-        for item in data.get('msgArray', []):
-            try:
-                code = item.get('c')
-                ex = item.get('ex')
-                # z: 最近成交價, y: 昨收, v: 累積成交量
-                price = item.get('z', item.get('y')) # 如果剛開盤還沒成交，取昨收
-                price = float(price) if price != '-' else float(item.get('y'))
-                prev_close = float(item.get('y'))
-                vol = int(item.get('v', 0))
+        # 🚀 關鍵修復：將請求分批 (每批 15 檔)，防止 URL 過長被官方直接截斷
+        chunk_size = 15
+        for i in range(0, len(ex_ch_list), chunk_size):
+            chunk = ex_ch_list[i:i + chunk_size]
+            url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={'|'.join(chunk)}&json=1&delay=0"
+            
+            res = session.get(url, headers=headers, timeout=5)
+            data = res.json()
+            
+            for item in data.get('msgArray', []):
+                try:
+                    code = item.get('c')
+                    ex = item.get('ex')
+                    
+                    # 處理 'z' (現價) 為 '-' 的情況 (可能遇到試撮或暫停交易)
+                    z_val = item.get('z', '-')
+                    y_val = item.get('y', '0')
+                    
+                    if z_val != '-':
+                        price = float(z_val)
+                    else:
+                        # 退而求其次，看有沒有買賣報價
+                        b_val = item.get('b', '').split('_')[0]
+                        if b_val and b_val != '-': price = float(b_val)
+                        else: price = float(y_val)
+                        
+                    prev_close = float(y_val)
+                    vol = int(item.get('v', 0))
+                    
+                    original_ticker = f"{code}.TW" if ex == 'tse' else f"{code}.TWO"
+                    results[original_ticker] = {
+                        "price": price,
+                        "prev_close": prev_close,
+                        "vol": vol
+                    }
+                except: continue
                 
-                original_ticker = f"{code}.TW" if ex == 'tse' else f"{code}.TWO"
-                results[original_ticker] = {
-                    "price": price,
-                    "prev_close": prev_close,
-                    "vol": vol
-                }
-            except: continue
         return results
     except Exception as e:
-        return {}
+        return results # 若中途被擋，把成功抓到的部分回傳
 
 # --- 💰 存股配息金庫 ---
 st.markdown("### 💰 PRO 級存股配息金庫")
@@ -189,7 +210,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 雙重融核運算引擎 (即時股價+歷史趨勢) ---
+# --- 🧠 雙重融核運算引擎 (🚀 修正 Fallback 防歸零) ---
 @st.cache_data(ttl=30)  
 def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
     tickers_to_fetch = {}
@@ -207,7 +228,7 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
     
     if not tickers_to_fetch: return pd.DataFrame()
     
-    # ⚡ [關鍵修改]：先透過官方 API 一次抓取所有即時報價
+    # ⚡ 先透過官方 API 一次抓取所有即時報價
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
@@ -230,7 +251,6 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
                         yahoo_div_info = f"{round(float(divs.iloc[-1]), 3)}元 ({divs.index[-1].strftime('%Y-%m-%d')})"
                 except: pass
 
-            # yfinance 現在只用來算均線與量能，不管現價
             hist = tk.history(period="6mo", auto_adjust=False)
             if hist.empty and is_manual and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
@@ -240,22 +260,33 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
                     
             if hist.empty or len(hist) < 10: continue
 
-            # ⚡ 注入證交所零延遲報價
+            # ⚡ 注入證交所零延遲報價 (與強化的 Fallback)
             rt_info = realtime_data.get(ticker)
-            if rt_info:
+            if rt_info and rt_info['prev_close'] > 0:
                 close_px = rt_info['price']
                 prev_close = rt_info['prev_close']
-                vol = rt_info['vol'] # 單位是張
+                vol = rt_info['vol']
             else:
-                # 備用方案：若官方斷線，退回 yf
-                close_px = float(tk.fast_info.last_price) if not np.isnan(float(tk.fast_info.last_price)) else float(hist['Close'].iloc[-1])
-                prev_close = float(hist['Close'].iloc[-2])
+                # 備用方案：若官方斷線或防爬蟲阻擋，安全退回 yfinance 以防歸零
+                try:
+                    close_px = float(tk.fast_info.last_price)
+                    if np.isnan(close_px) or close_px <= 0:
+                        close_px = float(hist['Close'].iloc[-1])
+                except:
+                    close_px = float(hist['Close'].iloc[-1])
+                    
+                try:
+                    prev_close = float(hist['Close'].iloc[-2])
+                except:
+                    prev_close = close_px
+                    
                 vol = float(hist['Volume'].iloc[-1]) / 1000
                 
             if not is_manual and close_px > price_limit: continue
             
             price_change_abs = close_px - prev_close 
-            price_change_pct = (price_change_abs / prev_close) * 100 
+            price_change_pct = (price_change_abs / prev_close) * 100 if prev_close > 0 else 0
+            
             if price_change_abs > 0: change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
             elif price_change_abs < 0: change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}"
             else: change_str = "➖ 0.00% / 0.00"
@@ -265,7 +296,7 @@ def fetch_and_analyze(price_limit, manual_input, only_manual_flag):
             ma20 = float(hist['Close'].tail(20).mean())  
             ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
-            bias = ((close_px - ma20) / ma20) * 100  
+            bias = ((close_px - ma20) / ma20) * 100 if ma20 > 0 else 0
             px_up = close_px > prev_close                
             vol_surge = (vol_5ma > 0 and (vol / vol_5ma) >= 2.0)
             
