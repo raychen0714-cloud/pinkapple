@@ -20,7 +20,6 @@ def load_data():
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if "total_div" not in data: data["total_div"] = 0.0
-                if "custom_div_map" not in data: data["custom_div_map"] = {}
                 if "held_stocks" not in data: data["held_stocks"] = []
                 if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
                 return data
@@ -28,7 +27,6 @@ def load_data():
             
     return {
         "total_div": 0.0,
-        "custom_div_map": {"00919.TW": "1.0元", "00918.TW": "1.26元", "0056.TW": "1.0元"},
         "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
     }
@@ -74,14 +72,12 @@ def fetch_twse_realtime(tickers):
                     code = item.get('c')
                     ex = item.get('ex')
                     
-                    # 強制轉字串並移除千分位逗號，防止 Float 轉換失敗
                     z_val = str(item.get('z', '-')).replace(',', '')
                     y_val = str(item.get('y', '0')).replace(',', '')
                     
                     if z_val != '-':
                         price = float(z_val)
                     else:
-                        # 漲停或試撮合期間可能沒有 z，嘗試抓買賣報價或退回昨收
                         b_val = str(item.get('b', '')).split('_')[0].replace(',', '')
                         if b_val and b_val != '-': price = float(b_val)
                         else: price = float(y_val)
@@ -90,7 +86,7 @@ def fetch_twse_realtime(tickers):
                     vol = int(item.get('v', 0))
                     
                     original_ticker = f"{code}.TW" if ex == 'tse' else f"{code}.TWO"
-                    if price > 0: # 確保絕對不會回傳 0 元
+                    if price > 0: 
                         results[original_ticker] = {"price": price, "prev_close": prev_close, "vol": vol}
                 except: continue
         return results
@@ -159,14 +155,14 @@ chip_data_map = fetch_twse_institutional_data()
 
 CUSTOM_NAME_MAP = {
     "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
-    "00981A.TW": "瑤姊","00403A.TW": "主動", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
-    "009816.TW": "凱基台灣TOP50","00905.TW": "FT台灣Smart", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
+    "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
+    "009816.TW": "凱基台灣TOP50", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息"
 }
 
-# --- 🎛️ 極簡側邊欄：只保留自選輸入 ---
+# --- 🎛️ 極簡側邊欄 ---
 st.sidebar.header("🎛️ 觀察清單控制台")
 saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481")
 manual_tickers_str = st.sidebar.text_input("🔍 手動輸入股票/ETF代號 (用逗號隔開)", value=saved_tickers)
@@ -202,13 +198,6 @@ def fetch_and_analyze(manual_input):
                     if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                 except: pass
 
-            yahoo_div_info = "-"
-            try:
-                divs = tk.dividends
-                if not divs.empty:
-                    yahoo_div_info = f"{round(float(divs.iloc[-1]), 3)}元 ({divs.index[-1].strftime('%Y-%m-%d')})"
-            except: pass
-
             hist = tk.history(period="6mo", auto_adjust=False)
             if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
@@ -218,7 +207,6 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 10: continue
             
-            # 向前填充缺失值，避免計算時出現 NaN
             hist = hist.ffill()
 
             rt_info = realtime_data.get(ticker)
@@ -227,7 +215,6 @@ def fetch_and_analyze(manual_input):
                 prev_close = rt_info['prev_close']
                 vol = rt_info['vol']
             else:
-                # 若官方 API 阻擋，退回歷史資料，且確保絕對不會有 0
                 close_px = float(hist['Close'].iloc[-1])
                 prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close_px
                 vol = float(hist['Volume'].iloc[-1]) / 1000
@@ -275,14 +262,12 @@ def fetch_and_analyze(manual_input):
                 "成交量(張)": int(vol),
                 "趨勢格局": trend_status,  
                 "📊 官方籌碼": chip_data_map.get(code_only, "➖ 上櫃/暫無"),  
-                "🤖 系統建議": note,
-                "Yahoo配息": yahoo_div_info 
+                "🤖 系統建議": note
             })
         except: continue
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # 改為按照你輸入的順序顯示，或者按成交量排序，這裡保持按成交量排序
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
     return df 
 
@@ -298,20 +283,12 @@ with st.spinner("官方 MIS 零延遲系統連接中..."):
     final_data = fetch_and_analyze(manual_tickers_str)
 
 if not final_data.empty:
-    def assign_final_dividend(row):
-        t_key = row['原始代號']
-        if t_key in st.session_state.app_data["custom_div_map"]:
-            return st.session_state.app_data["custom_div_map"][t_key]
-        return row['Yahoo配息']
-
-    final_data['💰 最新配息'] = final_data.apply(assign_final_dividend, axis=1)
     held_list = st.session_state.app_data.get("held_stocks", [])
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議', '💰 最新配息']]
-    
-    # 將持有打勾的排在最前面
+    # 移除了配息欄位
+    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
@@ -322,36 +299,36 @@ if not final_data.empty:
 
     styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) if hasattr(display_df.style, "map") else display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
+    # 加入 height=800 讓表格拉長填滿下方空白，減少滾動需求
     edited_df = st.data_editor(
-        styled_df, key="portfolio_editor", hide_index=True, use_container_width=True, 
+        styled_df, 
+        key="portfolio_editor", 
+        hide_index=True, 
+        use_container_width=True,
+        height=800, 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=140), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=120), 
-            "成交量(張)": st.column_config.NumberColumn("成交量", width=70),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=120),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=90), 
-            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=220), 
-            "💰 最新配息": st.column_config.TextColumn("💰 配息", width=140) 
+            "標的": st.column_config.TextColumn("標的", width=160), 
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=130), 
+            "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=130),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
+            "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=250) 
         }
     )
 
     has_changes = False
     current_held = st.session_state.app_data.get("held_stocks", [])
+    
     for i in range(len(display_df)):
         ticker_key = display_df.iloc[i]['原始代號']
         old_held, new_held = bool(display_df.iloc[i]['📌 持有']), bool(edited_df.iloc[i]['📌 持有'])
         if old_held != new_held:
             if new_held and (ticker_key not in current_held): current_held.append(ticker_key)
             elif (not new_held) and (ticker_key in current_held): current_held.remove(ticker_key)
-            has_changes = True
-
-        old_div, new_div = str(display_df.iloc[i]['💰 最新配息']), str(edited_df.iloc[i]['💰 最新配息'])
-        if old_div != new_div:
-            st.session_state.app_data["custom_div_map"][ticker_key] = new_div
             has_changes = True
 
     if has_changes:
