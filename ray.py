@@ -15,7 +15,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
-    # 將你的終極名單寫入預設值，就算雲端重啟清空檔案，也會回到這個完美狀態
     default_data = {
         "total_div": 0.0,
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -26,7 +25,6 @@ def load_data():
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
                 saved_data = json.load(f)
-                # 確保舊檔案如果缺漏欄位，會自動補上預設值，防止崩潰
                 for key, value in default_data.items():
                     if key not in saved_data:
                         saved_data[key] = value
@@ -303,7 +301,7 @@ if not final_data.empty:
 
     styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) if hasattr(display_df.style, "map") else display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 拔除了 height 屬性，讓 Streamlit 自動縮放包覆內容，不再產生空白行！
+    # 【重點修正】：真正徹底拔除 height 參數，讓資料筆數決定表格高度，完全消滅多餘的空白列與捲動軸！
     edited_df = st.data_editor(
         styled_df, 
         key="portfolio_editor", 
