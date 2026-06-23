@@ -285,7 +285,10 @@ with col2:
 with st.spinner("官方 MIS 零延遲系統連接中..."):
     final_data = fetch_and_analyze(manual_tickers_str)
 
-if not final_data.empty:
+# 🚨 防呆機制：如果連表格都出不來（可能是雲端主機被擋連線）
+if final_data.empty:
+    st.warning("⚠️ 系統目前無法取得報價資料。如果持續一片空白，可能是 Yahoo/證交所 API 暫時阻擋了雲端主機的連線，請稍後再重試！")
+else:
     held_list = st.session_state.app_data.get("held_stocks", [])
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
@@ -293,17 +296,10 @@ if not final_data.empty:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    def color_tw_stock(val):
-        if isinstance(val, str):
-            if '🔺' in val: return 'color: #ff4b4b; font-weight: bold;' 
-            elif '🔻' in val: return 'color: #09ab3b; font-weight: bold;' 
-        return ''
-
-    styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) if hasattr(display_df.style, "map") else display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
-    
-    # 【重點修正】：真正徹底拔除 height 參數，讓資料筆數決定表格高度，完全消滅多餘的空白列與捲動軸！
+    # 🔪 這裡徹底拔除了 styled_df（CSS樣式），直接把原生 display_df 餵給系統！
+    # 這樣 Streamlit 原生的排版引擎就會完全貼合表格高度，不會再有詭異的空白死角！
     edited_df = st.data_editor(
-        styled_df, 
+        display_df, 
         key="portfolio_editor", 
         hide_index=True, 
         use_container_width=True,
