@@ -155,7 +155,7 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
-# 🚀 這裡補齊了所有權值股，保證不再出現英文！
+# 字典補齊護國神山群
 CUSTOM_NAME_MAP = {
     "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "2317.TW": "鴻海",
     "4958.TW": "臻鼎-KY", "3037.TW": "欣興", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
@@ -297,16 +297,31 @@ else:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🎯【動態高度演算法】：完美消除捲動軸與多餘空白！
-    # 表頭約佔 40px，每一列資料約佔 36px
-    dynamic_height = int(len(display_df) * 36) + 40
+    # 🎯【台股標準顏色引擎：紅漲綠跌】
+    def color_tw_stock(val):
+        if isinstance(val, str):
+            if '🔺' in val or '+' in val: 
+                return 'color: #ff4b4b; font-weight: bold;'  # 紅色 (漲)
+            elif '🔻' in val or '-' in val: 
+                return 'color: #09ab3b; font-weight: bold;'  # 綠色 (跌)
+        return ''
+
+    # 重新套用樣式
+    if hasattr(display_df.style, "map"):
+        styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) 
+    else:
+        styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
+    
+    # 🎯【暴力防捲動軸演算法】
+    # 把每行高度拉長緩衝 (40px) 加上超大表頭緩衝 (50px)，保證不再有側邊捲動軸
+    dynamic_height = int(len(display_df) * 42) + 50
     
     edited_df = st.data_editor(
-        display_df, 
+        styled_df,  # 把帶有紅綠顏色的資料表放回來
         key="portfolio_editor", 
         hide_index=True, 
         use_container_width=True,
-        height=dynamic_height,  # 🚀 自動精準抓取表格高度
+        height=dynamic_height,  # 🚀 自動精準套用暴力高度
         disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
