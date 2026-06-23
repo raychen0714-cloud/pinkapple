@@ -10,26 +10,31 @@ import xml.etree.ElementTree as ET
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 ---
+# --- 💾 永久記憶系統 (強化防失憶機制) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
+    # 將你的終極名單寫入預設值，就算雲端重啟清空檔案，也會回到這個完美狀態
+    default_data = {
+        "total_div": 0.0,
+        "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
+    }
+    
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if "total_div" not in data: data["total_div"] = 0.0
-                if "held_stocks" not in data: data["held_stocks"] = []
-                if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
-                return data
-        except: pass
+                saved_data = json.load(f)
+                # 確保舊檔案如果缺漏欄位，會自動補上預設值，防止崩潰
+                for key, value in default_data.items():
+                    if key not in saved_data:
+                        saved_data[key] = value
+                return saved_data
+        except: 
+            return default_data
             
-    return {
-        "total_div": 0.0,
-        "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
-    }
+    return default_data
 
 def save_data(data):
     try:
@@ -42,7 +47,7 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# --- ⚡ 零延遲引擎：證交所官方 API (強化防禦 0 元異常) ---
+# --- ⚡ 零延遲引擎：證交所官方 API ---
 @st.cache_data(ttl=5)
 def fetch_twse_realtime(tickers):
     ex_ch_list = []
@@ -75,8 +80,7 @@ def fetch_twse_realtime(tickers):
                     z_val = str(item.get('z', '-')).replace(',', '')
                     y_val = str(item.get('y', '0')).replace(',', '')
                     
-                    if z_val != '-':
-                        price = float(z_val)
+                    if z_val != '-': price = float(z_val)
                     else:
                         b_val = str(item.get('b', '')).split('_')[0].replace(',', '')
                         if b_val and b_val != '-': price = float(b_val)
@@ -92,7 +96,7 @@ def fetch_twse_realtime(tickers):
         return results
     except: return results
 
-# --- 💰 存股配息金庫 (若不需要也可整塊刪除，這裡為你保留計算總額功能) ---
+# --- 💰 存股配息金庫 ---
 st.markdown("### 💰 PRO 級存股配息金庫")
 col_left, col_right = st.columns(2)
 
@@ -153,7 +157,6 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
-# 🚀 這裡幫你把 00905 FT台灣Smart 加回去了！
 CUSTOM_NAME_MAP = {
     "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
     "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
@@ -166,7 +169,7 @@ CUSTOM_NAME_MAP = {
 
 # --- 🎛️ 極簡側邊欄 ---
 st.sidebar.header("🎛️ 觀察清單控制台")
-saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905")
+saved_tickers = st.session_state.app_data.get("manual_tickers")
 manual_tickers_str = st.sidebar.text_input("🔍 手動輸入股票/ETF代號 (用逗號隔開)", value=saved_tickers)
 
 if manual_tickers_str != saved_tickers:
@@ -289,7 +292,6 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 這裡拔除了配息欄位，版面更簡潔
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
@@ -301,23 +303,22 @@ if not final_data.empty:
 
     styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) if hasattr(display_df.style, "map") else display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🚀 height=800：強制拉長表格，填滿下方的空白，告別頻繁滑動！
+    # 拔除了 height 屬性，讓 Streamlit 自動縮放包覆內容，不再產生空白行！
     edited_df = st.data_editor(
         styled_df, 
         key="portfolio_editor", 
         hide_index=True, 
         use_container_width=True,
-        height=800, 
         disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=160), 
+            "標的": st.column_config.TextColumn("標的", width=180), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
             "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=140), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
-            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=130),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=140),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=110), 
             "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=250) 
         }
     )
