@@ -18,7 +18,7 @@ def load_data():
     default_data = {
         "total_div": 0.0,
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454"
     }
     
     if os.path.exists(DATA_FILE):
@@ -155,8 +155,10 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
+# 🚀 這裡補齊了所有權值股，保證不再出現英文！
 CUSTOM_NAME_MAP = {
-    "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
+    "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "2317.TW": "鴻海",
+    "4958.TW": "臻鼎-KY", "3037.TW": "欣興", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
     "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
     "009816.TW": "凱基台灣TOP50", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
@@ -285,9 +287,8 @@ with col2:
 with st.spinner("官方 MIS 零延遲系統連接中..."):
     final_data = fetch_and_analyze(manual_tickers_str)
 
-# 🚨 防呆機制：如果連表格都出不來（可能是雲端主機被擋連線）
 if final_data.empty:
-    st.warning("⚠️ 系統目前無法取得報價資料。如果持續一片空白，可能是 Yahoo/證交所 API 暫時阻擋了雲端主機的連線，請稍後再重試！")
+    st.warning("⚠️ 系統目前無法取得報價資料，請確認代號是否輸入正確或稍後再試。")
 else:
     held_list = st.session_state.app_data.get("held_stocks", [])
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
@@ -296,23 +297,26 @@ else:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🔪 這裡徹底拔除了 styled_df（CSS樣式），直接把原生 display_df 餵給系統！
-    # 這樣 Streamlit 原生的排版引擎就會完全貼合表格高度，不會再有詭異的空白死角！
+    # 🎯【動態高度演算法】：完美消除捲動軸與多餘空白！
+    # 表頭約佔 40px，每一列資料約佔 36px
+    dynamic_height = int(len(display_df) * 36) + 40
+    
     edited_df = st.data_editor(
         display_df, 
         key="portfolio_editor", 
         hide_index=True, 
         use_container_width=True,
-        disabled=["標的", "現價", "📈 漲跌", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
+        height=dynamic_height,  # 🚀 自動精準抓取表格高度
+        disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=180), 
+            "標的": st.column_config.TextColumn("標的", width=160), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
             "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=140), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=140),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=110), 
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
             "🤖 系統建議": st.column_config.TextColumn("🤖 建議", width=250) 
         }
     )
