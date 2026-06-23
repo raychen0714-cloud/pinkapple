@@ -18,7 +18,7 @@ def load_data():
     default_data = {
         "total_div": 0.0,
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454"
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711"
     }
     
     if os.path.exists(DATA_FILE):
@@ -155,16 +155,17 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
-# 字典補齊護國神山群
+# 🚀 字典補齊新標的：00403A(主動統一升級50)、2327(國巨)、3711(日月光)
 CUSTOM_NAME_MAP = {
     "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "2317.TW": "鴻海",
+    "2327.TW": "國巨", "3711.TW": "日月光投控",
     "4958.TW": "臻鼎-KY", "3037.TW": "欣興", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
     "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
     "009816.TW": "凱基台灣TOP50", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
-    "00905.TW": "FT台灣Smart"
+    "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
 }
 
 # --- 🎛️ 極簡側邊欄 ---
@@ -313,15 +314,14 @@ else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
     # 🎯【暴力防捲動軸演算法】
-    # 把每行高度拉長緩衝 (40px) 加上超大表頭緩衝 (50px)，保證不再有側邊捲動軸
     dynamic_height = int(len(display_df) * 42) + 50
     
     edited_df = st.data_editor(
-        styled_df,  # 把帶有紅綠顏色的資料表放回來
+        styled_df, 
         key="portfolio_editor", 
         hide_index=True, 
         use_container_width=True,
-        height=dynamic_height,  # 🚀 自動精準套用暴力高度
+        height=dynamic_height, 
         disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "📊 官方籌碼", "趨勢格局", "🤖 系統建議"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
