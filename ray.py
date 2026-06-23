@@ -21,14 +21,14 @@ def load_data():
                 data = json.load(f)
                 if "total_div" not in data: data["total_div"] = 0.0
                 if "held_stocks" not in data: data["held_stocks"] = []
-                if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+                if "manual_tickers" not in data: data["manual_tickers"] = "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
                 return data
         except: pass
             
     return {
         "total_div": 0.0,
         "held_stocks": ["00878.TW", "00919.TW", "00918.TW", "0056.TW", "00927.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481"
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905"
     }
 
 def save_data(data):
@@ -92,7 +92,7 @@ def fetch_twse_realtime(tickers):
         return results
     except: return results
 
-# --- 💰 存股配息金庫 ---
+# --- 💰 存股配息金庫 (若不需要也可整塊刪除，這裡為你保留計算總額功能) ---
 st.markdown("### 💰 PRO 級存股配息金庫")
 col_left, col_right = st.columns(2)
 
@@ -153,18 +153,20 @@ def fetch_twse_institutional_data():
 
 chip_data_map = fetch_twse_institutional_data()
 
+# 🚀 這裡幫你把 00905 FT台灣Smart 加回去了！
 CUSTOM_NAME_MAP = {
     "4958.TW": "臻鼎-KY", "3037.TW": "四欣技", "3481.TW": "群創", "2409.TW": "友達", "6116.TW": "彩晶",
     "00981A.TW": "瑤姊", "00631L.TW": "元大正2", "00685L.TW": "群益正2", "0052.TW": "富邦科技",
     "009816.TW": "凱基台灣TOP50", "0050.TW": "元大台灣50", "0056.TW": "元大高股息",
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
-    "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息"
+    "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
+    "00905.TW": "FT台灣Smart"
 }
 
 # --- 🎛️ 極簡側邊欄 ---
 st.sidebar.header("🎛️ 觀察清單控制台")
-saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481")
+saved_tickers = st.session_state.app_data.get("manual_tickers", "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905")
 manual_tickers_str = st.sidebar.text_input("🔍 手動輸入股票/ETF代號 (用逗號隔開)", value=saved_tickers)
 
 if manual_tickers_str != saved_tickers:
@@ -287,7 +289,7 @@ if not final_data.empty:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 移除了配息欄位
+    # 這裡拔除了配息欄位，版面更簡潔
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 系統建議']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
@@ -299,7 +301,7 @@ if not final_data.empty:
 
     styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) if hasattr(display_df.style, "map") else display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 加入 height=800 讓表格拉長填滿下方空白，減少滾動需求
+    # 🚀 height=800：強制拉長表格，填滿下方的空白，告別頻繁滑動！
     edited_df = st.data_editor(
         styled_df, 
         key="portfolio_editor", 
@@ -312,7 +314,7 @@ if not final_data.empty:
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=160), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=80),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=130), 
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=140), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
             "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼", width=130),
             "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
