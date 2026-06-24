@@ -143,7 +143,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 核心引擎：即時報價 ---
+# --- 🧠 核心雙引擎：即時報價 + 歷史漲跌矩陣 ---
 @st.cache_data(ttl=60)  
 def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
@@ -155,11 +155,13 @@ def fetch_and_analyze(manual_input):
             name = CUSTOM_NAME_MAP.get(t_symbol, "自選標的")
             tickers_to_fetch[t_symbol] = name
     
-    if not tickers_to_fetch: return pd.DataFrame()
+    if not tickers_to_fetch: return pd.DataFrame(), pd.DataFrame()
     
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
+    hist_data_dict = {} # 記錄每檔股票的歷史漲跌幅
+    
     for ticker, name in tickers_to_fetch.items():
         try:
             tk = yf.Ticker(ticker)
@@ -178,6 +180,16 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 10: continue
             hist = hist.ffill()
+            
+            # --- 📈 歷史區間漲跌幅運算 ---
+            # 算出每天的漲跌幅 % 數，保留最後 30 個交易日
+            hist_pct = hist['Close'].pct_change() * 100
+            hist_pct = hist_pct.dropna().tail(30)
+            hist_pct.index = hist_pct.index.strftime('%m/%d') # 把日期轉成月/日格式
+            
+            code_only = ticker.replace(".TW", "").replace(".TWO","")
+            display_name = f"{code_only} {name}"
+            hist_data_dict[display_name] = hist_pct # 存入矩陣字典
 
             rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
@@ -205,7 +217,6 @@ def fetch_and_analyze(manual_input):
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
             else: trend_status = "🔽 跌破季線" 
 
-            code_only = ticker.replace(".TW", "").replace(".TWO","")
             results.append({
                 "原始代號": ticker,  
                 "代號": code_only, 
@@ -220,9 +231,14 @@ def fetch_and_analyze(manual_input):
     df = pd.DataFrame(results)
     if not df.empty:
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
-    return df 
+        
+    hist_df = pd.DataFrame(hist_data_dict) # 轉換為 DataFrame，列=日期，欄=標的
+    
+    return df, hist_df
 
-st.markdown("---")
+# ==========================================
+# 上方：即時戰情室
+# ==========================================
 st.subheader("🔍 PRO 觀察雷達 (即時報價核心版)")
 col1, col2 = st.columns([8, 2])
 with col2:
@@ -231,7 +247,7 @@ with col2:
         st.rerun()
 
 with st.spinner("官方 MIS 連線中..."):
-    final_data = fetch_and_analyze(manual_tickers_str)
+    final_data, history_matrix = fetch_and_analyze(manual_tickers_str)
 
 if final_data.empty:
     st.warning("⚠️ 系統目前無法取得報價資料，請確認代號是否輸入正確或稍後再試。")
@@ -289,3 +305,34 @@ else:
         st.session_state.app_data["held_stocks"] = current_held
         save_data(st.session_state.app_data)       
         st.rerun()
+
+# ==========================================
+# 下方：歷史區間漲跌幅矩陣 (滿血回歸！)
+# ==========================================
+st.markdown("---")
+st.subheader("📉 歷史漲跌幅矩陣 (自訂天數追蹤)")
+
+# 拉桿：讓使用者決定要看過去幾天
+lookback_days = st.slider("📅 設定要回查的交易天數", min_value=1, max_value=30, value=5)
+
+if not history_matrix.empty:
+    # 取出最後 N 天的資料，並且將矩陣轉置 (讓標的在左側直排，日期在上方橫排)
+    recent_history = history_matrix.tail(lookback_days).T 
+    recent_history = recent_history.fillna(0) # 防呆補零
+    
+    # 將數字轉為帶有紅綠箭頭的百分比字串
+    def format_history_pct(val):
+        if pd.isna(val): return "➖"
+        if val > 0: return f"🔺 +{val:.2f}%"
+        elif val < 0: return f"🔻 {val:.2f}%"
+        else: return "➖ 0.00%"
+        
+    styled_hist_df = recent_history.applymap(format_history_pct)
+    
+    # 上色引擎
+    if hasattr(styled_hist_df.style, "map"):
+        colored_hist = styled_hist_df.style.map(color_tw_stock)
+    else:
+        colored_hist = styled_hist_df.style.applymap(color_tw_stock)
+
+    st.dataframe(colored_hist, use_container_width=True)
