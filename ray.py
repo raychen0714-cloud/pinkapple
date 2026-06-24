@@ -5,16 +5,17 @@ import numpy as np
 import json
 import os
 import requests
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 (防雲端失憶機制) ---
+# --- 💾 永久記憶系統 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
-    # 👉 【終極防護】：請把 0.0 改成你真實的總配息金額
     default_data = {
         "total_div": 0.0, 
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -56,6 +57,35 @@ CUSTOM_NAME_MAP = {
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
     "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
 }
+
+# --- 📰 Google News RSS 爬蟲引擎 (滿血回歸！) ---
+@st.cache_data(ttl=600)
+def fetch_news_and_sentiment(stock_code, stock_name):
+    try:
+        query = urllib.parse.quote(f"{stock_name} 股市")
+        url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        res = requests.get(url, timeout=4)
+        root = ET.fromstring(res.text)
+        
+        items = root.findall('.//item')
+        if not items: return "➖ 中性", "近期無重大新聞"
+            
+        latest_title = items[0].find('title').text.split(" - ")[0] 
+        
+        combined_text = " ".join([item.find('title').text for item in items[:2]])
+        pos_kw = ["大漲", "創高", "買超", "看好", "利多", "上修", "受惠", "營收增", "突破", "強勁", "飆", "高息", "亮眼", "漲停"]
+        neg_kw = ["跌", "賣超", "看壞", "利空", "下修", "衰退", "砍單", "外資逃", "探底", "疲弱", "保守", "降評", "重挫", "跌停"]
+        
+        p_score = sum(1 for k in pos_kw if k in combined_text)
+        n_score = sum(1 for k in neg_kw if k in combined_text)
+        
+        if p_score > n_score: sentiment = "🔥 利多"
+        elif n_score > p_score: sentiment = "🚨 利空"
+        else: sentiment = "➖ 中性"
+        
+        return sentiment, latest_title
+    except Exception:
+        return "➖ 中性", "新聞讀取中..."
 
 # --- ⚡ 零延遲引擎：證交所官方 API ---
 @st.cache_data(ttl=5)
@@ -143,7 +173,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 核心雙引擎：即時報價 + 歷史矩陣 ---
+# --- 🧠 核心三引擎：即時報價 + 新聞輿情 + 歷史矩陣 ---
 @st.cache_data(ttl=60)  
 def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
@@ -174,7 +204,6 @@ def fetch_and_analyze(manual_input):
                     if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                 except: pass
 
-            # 縮小抓取範圍加快速度，1個月足夠算最後30天
             hist = tk.history(period="1mo", auto_adjust=False)
             if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
@@ -184,20 +213,18 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 2: continue
             
-            # 🚀 終極除蟲：強制剝離時區，防止 Pandas 合併時出錯！
-            hist.index = pd.to_datetime(hist.index).tz_localize(None)
+            # 🚀 終極日期對齊法：完全剝除時區，只保留乾淨的 YYYY-MM-DD
+            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
             hist = hist.ffill()
 
             # 計算漲跌幅
             hist_pct = hist['Close'].pct_change() * 100
-            hist_pct = hist_pct.dropna()
-            
-            # 轉成純文字日期 MM/DD，絕不會出錯
-            hist_pct.index = hist_pct.index.strftime('%m/%d')
-            hist_pct = hist_pct[~hist_pct.index.duplicated(keep='last')]
-            all_hist_pct[display_name] = hist_pct
+            all_hist_pct[display_name] = hist_pct.dropna()
 
-            # 上方即時報價運算
+            # 📰 呼叫新聞輿情
+            sentiment, latest_title = fetch_news_and_sentiment(ticker, name)
+
+            # 📈 上方即時報價運算
             rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 close_px = rt_info['price']
@@ -229,7 +256,9 @@ def fetch_and_analyze(manual_input):
                 "現價": round(close_px, 2), 
                 "📈 漲跌": change_str, 
                 "成交量(張)": int(vol),
-                "趨勢格局": trend_status
+                "趨勢格局": trend_status,
+                "🤖 消息面": sentiment,
+                "📰 最新新聞": latest_title
             })
         except: continue
             
@@ -237,27 +266,28 @@ def fetch_and_analyze(manual_input):
     if not df.empty:
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
         
-    # 建立歷史矩陣
+    # 建立歷史矩陣 (Pandas 會自動透過剛剛的乾淨日期完美對齊)
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
-        hist_matrix = hist_df.T # 翻轉矩陣：列=標的，欄=日期
-        hist_matrix = hist_matrix.sort_index(axis=1) # 依照日期排序確保時間順序
+        hist_df = hist_df.dropna(how='all') # 刪除所有股票都沒交易的假日
+        hist_df.index = hist_df.index.strftime('%m/%d') # 對齊完畢後再轉成 月/日 格式
+        hist_matrix = hist_df.T 
     else:
         hist_matrix = pd.DataFrame()
         
     return df, hist_matrix
 
 # ==========================================
-# 上方區塊：即時報價雷達
+# 上方區塊：即時報價與新聞雷達
 # ==========================================
-st.subheader("🔍 PRO 觀察雷達 (即時報價核心版)")
+st.subheader("🔍 PRO 觀察雷達 (即時報價 + 新聞輿情)")
 col1, col2 = st.columns([8, 2])
 with col2:
-    if st.button("🔄 強制刷新報價", use_container_width=True):
+    if st.button("🔄 強制刷新報價與新聞", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("官方 MIS 連線中..."):
+with st.spinner("官方 MIS 連線中... 正在同步財經新聞..."):
     final_data, history_matrix = fetch_and_analyze(manual_tickers_str)
 
 if final_data.empty:
@@ -267,21 +297,23 @@ else:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局']]
+    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '🤖 消息面', '📰 最新新聞']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
+    # 🎨 顏色渲染引擎
     def color_tw_stock(val):
         if isinstance(val, str):
-            if '🔺' in val or '+' in val: return 'color: #ff4b4b; font-weight: bold;'
-            elif '🔻' in val or '-' in val: return 'color: #09ab3b; font-weight: bold;'
+            if '🔺' in val or '+' in val or '🔥' in val: return 'color: #ff4b4b; font-weight: bold;'
+            elif '🔻' in val or '-' in val or '🚨' in val: return 'color: #09ab3b; font-weight: bold;'
         return ''
 
     if hasattr(display_df.style, "map"):
-        styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌']) 
+        styled_df = display_df.style.map(color_tw_stock, subset=['📈 漲跌', '🤖 消息面']) 
     else:
-        styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
+        styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌', '🤖 消息面'])
     
-    dynamic_height = int(len(display_df) * 45) + 60
+    # 🚀 動態高度完美計算 
+    dynamic_height = int(len(display_df) * 40) + 50
     
     edited_df = st.data_editor(
         styled_df, 
@@ -289,15 +321,17 @@ else:
         hide_index=True, 
         use_container_width=True,
         height=dynamic_height, 
-        disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局"], 
+        disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局", "🤖 消息面", "📰 最新新聞"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=160), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=90),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=180), 
-            "成交量(張)": st.column_config.NumberColumn("成交量", width=90),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=120)
+            "標的": st.column_config.TextColumn("標的", width=130), 
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=140), 
+            "成交量(張)": st.column_config.NumberColumn("成交量", width=80),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=90),
+            "🤖 消息面": st.column_config.TextColumn("消息面", width=90),
+            "📰 最新新聞": st.column_config.TextColumn("📰 最新新聞標題", width=300)
         }
     )
 
@@ -330,7 +364,7 @@ if not history_matrix.empty:
     recent_history = history_matrix.iloc[:, -lookback_days:]
     recent_history = recent_history.fillna(0) # 沒交易的補零
     
-    # 格式化顯示 (確保所有數字轉成帶箭頭的字串)
+    # 格式化顯示
     def format_history_pct(val):
         if pd.isna(val) or val == 0: return "➖ 0.00%"
         if val > 0: return f"🔺 +{val:.2f}%"
@@ -345,9 +379,7 @@ if not history_matrix.empty:
     else:
         colored_hist = formatted_hist_df.style.applymap(color_tw_stock)
 
-    # 🚀 動態高度完美計算 (消滅歷史矩陣捲軸)
     matrix_height = int(len(formatted_hist_df) * 40) + 50
-
     st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
 else:
-    st.info("💡 歷史資料正在重新同步中，請點擊右上角「強制刷新報價」試試！")
+    st.info("💡 歷史資料正在重新同步中，請點擊右上角「強制刷新報價與新聞」重試！")
