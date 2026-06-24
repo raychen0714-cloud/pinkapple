@@ -5,17 +5,22 @@ import numpy as np
 import json
 import os
 import requests
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 # --- ⚙️ 頁面與效能設定 ---
-st.set_page_config(page_title="PRO 級存股戰情室 - 新聞直連版", layout="wide")
+st.set_page_config(page_title="PRO 級存股戰情室 - RSS新聞直連版", layout="wide")
 
-# --- 💾 永久記憶系統 (強化防失憶機制) ---
+# --- 💾 永久記憶系統 (防雲端失憶機制) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
     default_data = {
-        "total_div": 0.0,
+        # 👇 👉 【請在這裡修改】：把你目前的總配息金額寫在這邊 (例如 150000.0) 
+        # 這樣就算雲端重啟，也絕對不會歸零！
+        "total_div": 0.0, 
+        
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711"
     }
@@ -43,6 +48,39 @@ def save_data(data):
 
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
+
+# --- 📰 Google News RSS 爬蟲引擎 (絕對不會無！) ---
+def fetch_news_and_sentiment(stock_name):
+    try:
+        query = urllib.parse.quote(f"{stock_name} 股市")
+        url = f"https://news.google.com/rss/search?q={query}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        
+        res = requests.get(url, timeout=5)
+        root = ET.fromstring(res.text)
+        
+        # 抓取最新的 3 篇新聞標題
+        titles = [item.find('title').text for item in root.findall('.//item')[:3]]
+        
+        if not titles:
+            return "➖ 中性", "近期無重大新聞"
+            
+        latest_title = titles[0].split(" - ")[0] # 去除後面的新聞台名稱
+        combined_text = " ".join(titles)
+        
+        # AI 關鍵字情緒分析
+        pos_kw = ["大漲", "創高", "買超", "看好", "利多", "上修", "受惠", "營收增", "突破", "強勁", "飆", "高息", "配息", "成長", "買進", "亮眼"]
+        neg_kw = ["跌", "賣超", "看壞", "利空", "下修", "衰退", "砍單", "外資逃", "探底", "疲弱", "保守", "降評", "重挫", "大跌"]
+        
+        p_score = sum(1 for k in pos_kw if k in combined_text)
+        n_score = sum(1 for k in neg_kw if k in combined_text)
+        
+        if p_score > n_score: sentiment = "🔥 利多"
+        elif n_score > p_score: sentiment = "🚨 利空"
+        else: sentiment = "➖ 中性"
+        
+        return sentiment, latest_title
+    except Exception as e:
+        return "➖ 中性", "新聞讀取超時或失敗"
 
 # --- ⚡ 零延遲引擎：證交所官方 API ---
 @st.cache_data(ttl=5)
@@ -142,7 +180,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 核心雙引擎：即時報價 + Yahoo新聞掃描 ---
+# --- 🧠 核心雙引擎：即時報價 + 穩定新聞掃描 ---
 @st.cache_data(ttl=60)  
 def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
@@ -205,25 +243,8 @@ def fetch_and_analyze(manual_input):
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
             else: trend_status = "🔽 跌破季線" 
 
-            # --- 📰 讀取 Yahoo 原生新聞與判斷利多利空 ---
-            news_list = tk.news
-            if news_list and len(news_list) > 0:
-                latest_title = news_list[0].get('title', '')
-                # 拿最新的三篇新聞標題來判斷風向
-                combined_text = " ".join([n.get('title', '') for n in news_list[:3]])
-                
-                pos_kw = ["大漲", "創高", "買超", "看好", "利多", "上修", "受惠", "營收增", "突破", "強勁", "飆", "高息", "配息", "成長", "買進"]
-                neg_kw = ["跌", "賣超", "看壞", "利空", "下修", "衰退", "砍單", "外資逃", "探底", "疲弱", "保守", "降評", "重挫"]
-                
-                p_score = sum(1 for k in pos_kw if k in combined_text)
-                n_score = sum(1 for k in neg_kw if k in combined_text)
-                
-                if p_score > n_score: sentiment = "🔥 利多"
-                elif n_score > p_score: sentiment = "🚨 利空"
-                else: sentiment = "➖ 中性"
-            else:
-                latest_title = "暫無相關新聞"
-                sentiment = "➖ 中性"
+            # 呼叫強大的 Google RSS 新聞爬蟲
+            sentiment, latest_title = fetch_news_and_sentiment(name)
 
             code_only = ticker.replace(".TW", "").replace(".TWO","")
             results.append({
@@ -245,14 +266,14 @@ def fetch_and_analyze(manual_input):
     return df 
 
 st.markdown("---")
-st.subheader("🔍 PRO 觀察雷達 (即時報價 + 新聞掃描引擎)")
+st.subheader("🔍 PRO 觀察雷達 (即時報價 + RSS新聞直連)")
 col1, col2 = st.columns([8, 2])
 with col2:
     if st.button("🔄 強制刷新報價與新聞", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("官方 MIS 連線中... 正在同步讀取 Yahoo 最新新聞..."):
+with st.spinner("官方 MIS 連線中... 正在讀取 Google 財經新聞網..."):
     final_data = fetch_and_analyze(manual_tickers_str)
 
 if final_data.empty:
@@ -262,7 +283,6 @@ else:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    # 加入「消息面」與「最新新聞」欄位
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
