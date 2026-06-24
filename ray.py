@@ -9,12 +9,11 @@ import requests
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 (防雲端失憶機制) ---
+# --- 💾 永久記憶系統 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
-    # 👉 【終極防護】：請把 0.0 改成你真實的總配息金額
     default_data = {
         "total_div": 0.0, 
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -160,7 +159,7 @@ def fetch_and_analyze(manual_input):
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
-    all_hist_pct = {} # 蒐集歷史矩陣資料
+    all_hist_pct = {} # 記錄歷史漲跌幅的字典
     
     for ticker, name in tickers_to_fetch.items():
         code_only = ticker.split('.')[0]
@@ -184,9 +183,13 @@ def fetch_and_analyze(manual_input):
             if hist.empty or len(hist) < 10: continue
             hist = hist.ffill()
 
-            # 運算歷史漲跌矩陣資料
+            # 🚀 關鍵修正：將時間戳記強制轉換為純文字「月/日」，確保每一檔股票完美對齊！
             hist_pct = hist['Close'].pct_change() * 100
-            all_hist_pct[display_name] = hist_pct.dropna().tail(30)
+            hist_pct = hist_pct.dropna().tail(30)
+            hist_pct.index = hist_pct.index.strftime('%m/%d')
+            # 剔除可能重複的日子，避免合併報錯
+            hist_pct = hist_pct[~hist_pct.index.duplicated(keep='last')]
+            all_hist_pct[display_name] = hist_pct
 
             rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
@@ -229,10 +232,10 @@ def fetch_and_analyze(manual_input):
     if not df.empty:
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
         
+    # 建立歷史矩陣
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
-        hist_df.index = hist_df.index.strftime('%m/%d')
-        hist_matrix = hist_df.T
+        hist_matrix = hist_df.T # 翻轉矩陣：列=標的，欄=日期
     else:
         hist_matrix = pd.DataFrame()
         
@@ -273,10 +276,9 @@ else:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🚀 動態高度完美計算 (加倍緩衝，絕對不生捲動軸)
-    dynamic_height = int(len(display_df) * 40) + 60
+    # 🚀 動態高度完美計算 (加大緩衝，保證無捲動軸)
+    dynamic_height = int(len(display_df) * 45) + 80
     
-    # 🔪 解開 TextColumn 限制，讓顏色滿血復活
     edited_df = st.data_editor(
         styled_df, 
         key="portfolio_editor", 
@@ -285,13 +287,13 @@ else:
         height=dynamic_height, 
         disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
             "原始代號": None, 
-            "標的": st.column_config.TextColumn("標的", width=140), 
-            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
-            "成交量(張)": st.column_config.NumberColumn("成交量", width=70),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=100)
-            # 移除了 📈 漲跌 的強制設定，讓它吃得到紅綠色！
+            "標的": st.column_config.TextColumn("標的", width=160), 
+            "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=90),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=180), # 🚀 欄位加寬，防止文字擠壓換行
+            "成交量(張)": st.column_config.NumberColumn("成交量", width=90),
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=120)
         }
     )
 
@@ -317,7 +319,6 @@ else:
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅矩陣 (追蹤主力動向)")
 
-# 📅 讓使用者自由拉動天數
 lookback_days = st.slider("📅 設定要回查的交易天數", min_value=1, max_value=30, value=5)
 
 if not history_matrix.empty:
@@ -334,10 +335,11 @@ if not history_matrix.empty:
         
     styled_hist_df = recent_history.applymap(format_history_pct)
     
-    # 為歷史矩陣套用紅綠色
     if hasattr(styled_hist_df.style, "map"):
         colored_hist = styled_hist_df.style.map(color_tw_stock)
     else:
         colored_hist = styled_hist_df.style.applymap(color_tw_stock)
 
     st.dataframe(colored_hist, use_container_width=True)
+else:
+    st.info("💡 歷史資料載入中，請稍後...")
