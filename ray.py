@@ -143,7 +143,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 核心雙引擎：即時報價 + 歷史矩陣 ---
+# --- 🧠 核心引擎：即時報價 ---
 @st.cache_data(ttl=60)  
 def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
@@ -155,17 +155,12 @@ def fetch_and_analyze(manual_input):
             name = CUSTOM_NAME_MAP.get(t_symbol, "自選標的")
             tickers_to_fetch[t_symbol] = name
     
-    if not tickers_to_fetch: return pd.DataFrame(), pd.DataFrame()
+    if not tickers_to_fetch: return pd.DataFrame()
     
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
-    all_hist_pct = {} # 蒐集歷史矩陣資料
-    
     for ticker, name in tickers_to_fetch.items():
-        code_only = ticker.split('.')[0]
-        display_name = f"{code_only} {name}"
-        
         try:
             tk = yf.Ticker(ticker)
             if name == "自選標的":
@@ -183,10 +178,6 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 10: continue
             hist = hist.ffill()
-
-            # 運算歷史漲跌矩陣資料
-            hist_pct = hist['Close'].pct_change() * 100
-            all_hist_pct[display_name] = hist_pct.dropna().tail(30)
 
             rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
@@ -214,6 +205,7 @@ def fetch_and_analyze(manual_input):
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
             else: trend_status = "🔽 跌破季線" 
 
+            code_only = ticker.replace(".TW", "").replace(".TWO","")
             results.append({
                 "原始代號": ticker,  
                 "代號": code_only, 
@@ -228,19 +220,9 @@ def fetch_and_analyze(manual_input):
     df = pd.DataFrame(results)
     if not df.empty:
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
-        
-    hist_df = pd.DataFrame(all_hist_pct)
-    if not hist_df.empty:
-        hist_df.index = hist_df.index.strftime('%m/%d')
-        hist_matrix = hist_df.T
-    else:
-        hist_matrix = pd.DataFrame()
-        
-    return df, hist_matrix
+    return df 
 
-# ==========================================
-# 上方區塊：即時報價雷達
-# ==========================================
+st.markdown("---")
 st.subheader("🔍 PRO 觀察雷達 (即時報價核心版)")
 col1, col2 = st.columns([8, 2])
 with col2:
@@ -249,7 +231,7 @@ with col2:
         st.rerun()
 
 with st.spinner("官方 MIS 連線中..."):
-    final_data, history_matrix = fetch_and_analyze(manual_tickers_str)
+    final_data = fetch_and_analyze(manual_tickers_str)
 
 if final_data.empty:
     st.warning("⚠️ 系統目前無法取得報價資料，請確認代號是否輸入正確或稍後再試。")
@@ -261,7 +243,6 @@ else:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🎨 顏色渲染引擎 (紅漲綠跌)
     def color_tw_stock(val):
         if isinstance(val, str):
             if '🔺' in val or '+' in val: return 'color: #ff4b4b; font-weight: bold;'
@@ -273,10 +254,8 @@ else:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🚀 動態高度完美計算 (加倍緩衝，絕對不生捲動軸)
-    dynamic_height = int(len(display_df) * 40) + 60
+    dynamic_height = int(len(display_df) * 38) + 45
     
-    # 🔪 解開 TextColumn 限制，讓顏色滿血復活
     edited_df = st.data_editor(
         styled_df, 
         key="portfolio_editor", 
@@ -289,9 +268,9 @@ else:
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=140), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=140), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=70),
             "趨勢格局": st.column_config.TextColumn("趨勢", width=100)
-            # 移除了 📈 漲跌 的強制設定，讓它吃得到紅綠色！
         }
     )
 
@@ -310,34 +289,3 @@ else:
         st.session_state.app_data["held_stocks"] = current_held
         save_data(st.session_state.app_data)       
         st.rerun()
-
-# ==========================================
-# 下方區塊：歷史區間漲跌幅矩陣
-# ==========================================
-st.markdown("---")
-st.subheader("📉 歷史漲跌幅矩陣 (追蹤主力動向)")
-
-# 📅 讓使用者自由拉動天數
-lookback_days = st.slider("📅 設定要回查的交易天數", min_value=1, max_value=30, value=5)
-
-if not history_matrix.empty:
-    # 依照使用者設定，抓出最後 N 天的資料
-    recent_history = history_matrix.iloc[:, -lookback_days:]
-    recent_history = recent_history.fillna(0) # 防呆補零
-    
-    # 格式化數字並加上箭頭
-    def format_history_pct(val):
-        if pd.isna(val) or val == 0: return "➖ 0.00%"
-        if val > 0: return f"🔺 +{val:.2f}%"
-        elif val < 0: return f"🔻 {val:.2f}%"
-        else: return "➖ 0.00%"
-        
-    styled_hist_df = recent_history.applymap(format_history_pct)
-    
-    # 為歷史矩陣套用紅綠色
-    if hasattr(styled_hist_df.style, "map"):
-        colored_hist = styled_hist_df.style.map(color_tw_stock)
-    else:
-        colored_hist = styled_hist_df.style.applymap(color_tw_stock)
-
-    st.dataframe(colored_hist, use_container_width=True)
