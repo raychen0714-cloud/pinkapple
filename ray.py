@@ -336,7 +336,7 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (解決被切斷的問題)
+# 【下方面板】歷史區間漲跌幅矩陣 (✨ 動態 Markdown 渲染 - 絕對不切斷版)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
@@ -366,23 +366,31 @@ if not history_matrix.empty:
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 格式化引擎：移除換行符號，改用「括號」放在同一排，徹底解決 Streamlit 斷字切頭切尾的問題！
-        def format_matrix_value(val):
-            if pd.isna(val) or val == "0.000,0.000": return "➖ 0.00% (0.00元)"
-            try:
-                pct_str, diff_str = val.split(',')
-                pct, diff = float(pct_str), float(diff_str)
-                if pct > 0: return f"🔺 +{pct:.2f}% (+{diff:.2f}元)"
-                elif pct < 0: return f"🔻 {pct:.2f}% ({diff:.2f}元)"
-                return "➖ 0.00% (0.00元)"
-            except:
-                return "➖ 0.00% (0.00元)"
-            
-        formatted_hist_df = recent_history.apply(lambda col: col.map(format_matrix_value))
-        colored_hist = safe_style_map(formatted_hist_df.style, color_tw_stock)
+        # 🚀 突破系統限制！改用 Markdown 語法生成表格，<br> 自動長高，絕對不會被切斷！
+        md_str = "| 📌 標的名稱 | " + " | ".join(recent_history.columns) + " |\n"
+        md_str += "|:---|:---:" * len(recent_history.columns) + "|\n"
         
-        # 高度恢復正常設定
-        matrix_height = int(len(formatted_hist_df) * 40) + 50
-        st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
+        for idx, row in recent_history.iterrows():
+            row_cells = []
+            for val in row:
+                if pd.isna(val) or val == "0.000,0.000": 
+                    row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+                else:
+                    try:
+                        pct_str, diff_str = val.split(',')
+                        pct, diff = float(pct_str), float(diff_str)
+                        if pct > 0: 
+                            row_cells.append(f"<span style='color:#ff4b4b;font-weight:bold;'>🔺 +{pct:.2f}%</span><br><span style='color:#ff4b4b;font-size:0.85em;'>(+{diff:.2f}元)</span>")
+                        elif pct < 0: 
+                            row_cells.append(f"<span style='color:#09ab3b;font-weight:bold;'>🔻 {pct:.2f}%</span><br><span style='color:#09ab3b;font-size:0.85em;'>({diff:.2f}元)</span>")
+                        else:
+                            row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+                    except:
+                        row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+            
+            md_str += f"| **{idx}** | " + " | ".join(row_cells) + " |\n"
+        
+        # 將最終生成的表格用 Markdown 渲染出來
+        st.markdown(md_str, unsafe_allow_html=True)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
