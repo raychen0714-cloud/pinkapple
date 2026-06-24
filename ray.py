@@ -9,11 +9,12 @@ import requests
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
-# --- 💾 永久記憶系統 ---
+# --- 💾 永久記憶系統 (防雲端失憶機制) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
+    # 👉 【終極防護】：請把 0.0 改成你真實的總配息金額
     default_data = {
         "total_div": 0.0, 
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -159,7 +160,7 @@ def fetch_and_analyze(manual_input):
     realtime_data = fetch_twse_realtime(list(tickers_to_fetch.keys()))
     
     results = [] 
-    all_hist_pct = {} # 記錄歷史漲跌幅的字典
+    all_hist_pct = {} 
     
     for ticker, name in tickers_to_fetch.items():
         code_only = ticker.split('.')[0]
@@ -173,24 +174,30 @@ def fetch_and_analyze(manual_input):
                     if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                 except: pass
 
-            hist = tk.history(period="6mo", auto_adjust=False)
+            # 縮小抓取範圍加快速度，1個月足夠算最後30天
+            hist = tk.history(period="1mo", auto_adjust=False)
             if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
                 tk = yf.Ticker(ticker_two)
-                hist = tk.history(period="6mo", auto_adjust=False)
+                hist = tk.history(period="1mo", auto_adjust=False)
                 if not hist.empty: ticker = ticker_two 
                     
-            if hist.empty or len(hist) < 10: continue
+            if hist.empty or len(hist) < 2: continue
+            
+            # 🚀 終極除蟲：強制剝離時區，防止 Pandas 合併時出錯！
+            hist.index = pd.to_datetime(hist.index).tz_localize(None)
             hist = hist.ffill()
 
-            # 🚀 關鍵修正：將時間戳記強制轉換為純文字「月/日」，確保每一檔股票完美對齊！
+            # 計算漲跌幅
             hist_pct = hist['Close'].pct_change() * 100
-            hist_pct = hist_pct.dropna().tail(30)
+            hist_pct = hist_pct.dropna()
+            
+            # 轉成純文字日期 MM/DD，絕不會出錯
             hist_pct.index = hist_pct.index.strftime('%m/%d')
-            # 剔除可能重複的日子，避免合併報錯
             hist_pct = hist_pct[~hist_pct.index.duplicated(keep='last')]
             all_hist_pct[display_name] = hist_pct
 
+            # 上方即時報價運算
             rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 close_px = rt_info['price']
@@ -210,12 +217,10 @@ def fetch_and_analyze(manual_input):
 
             ma5 = float(hist['Close'].tail(5).mean())   
             ma20 = float(hist['Close'].tail(20).mean())  
-            ma60 = float(hist['Close'].tail(60).mean()) if len(hist) >= 60 else 0 
             
-            if ma60 > 0 and close_px > ma5 > ma20 > ma60: trend_status = "🔥 多頭排列" 
-            elif ma60 > 0 and close_px < ma5 < ma20 < ma60: trend_status = "🧊 空頭排列" 
-            elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
-            else: trend_status = "🔽 跌破季線" 
+            if close_px > ma5 and close_px > ma20: trend_status = "🔥 偏多" 
+            elif close_px < ma5 and close_px < ma20: trend_status = "🧊 偏空" 
+            else: trend_status = "➖ 整理" 
 
             results.append({
                 "原始代號": ticker,  
@@ -236,6 +241,7 @@ def fetch_and_analyze(manual_input):
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
         hist_matrix = hist_df.T # 翻轉矩陣：列=標的，欄=日期
+        hist_matrix = hist_matrix.sort_index(axis=1) # 依照日期排序確保時間順序
     else:
         hist_matrix = pd.DataFrame()
         
@@ -264,7 +270,6 @@ else:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🎨 顏色渲染引擎 (紅漲綠跌)
     def color_tw_stock(val):
         if isinstance(val, str):
             if '🔺' in val or '+' in val: return 'color: #ff4b4b; font-weight: bold;'
@@ -276,8 +281,7 @@ else:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌'])
     
-    # 🚀 動態高度完美計算 (加大緩衝，保證無捲動軸)
-    dynamic_height = int(len(display_df) * 45) + 80
+    dynamic_height = int(len(display_df) * 45) + 60
     
     edited_df = st.data_editor(
         styled_df, 
@@ -291,7 +295,7 @@ else:
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=160), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=90),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=180), # 🚀 欄位加寬，防止文字擠壓換行
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=180), 
             "成交量(張)": st.column_config.NumberColumn("成交量", width=90),
             "趨勢格局": st.column_config.TextColumn("趨勢", width=120)
         }
@@ -322,24 +326,28 @@ st.subheader("📉 歷史漲跌幅矩陣 (追蹤主力動向)")
 lookback_days = st.slider("📅 設定要回查的交易天數", min_value=1, max_value=30, value=5)
 
 if not history_matrix.empty:
-    # 依照使用者設定，抓出最後 N 天的資料
+    # 擷取最後 N 天的資料
     recent_history = history_matrix.iloc[:, -lookback_days:]
-    recent_history = recent_history.fillna(0) # 防呆補零
+    recent_history = recent_history.fillna(0) # 沒交易的補零
     
-    # 格式化數字並加上箭頭
+    # 格式化顯示 (確保所有數字轉成帶箭頭的字串)
     def format_history_pct(val):
         if pd.isna(val) or val == 0: return "➖ 0.00%"
         if val > 0: return f"🔺 +{val:.2f}%"
         elif val < 0: return f"🔻 {val:.2f}%"
-        else: return "➖ 0.00%"
+        return "➖ 0.00%"
         
-    styled_hist_df = recent_history.applymap(format_history_pct)
+    formatted_hist_df = recent_history.applymap(format_history_pct)
     
-    if hasattr(styled_hist_df.style, "map"):
-        colored_hist = styled_hist_df.style.map(color_tw_stock)
+    # 套用顏色引擎
+    if hasattr(formatted_hist_df.style, "map"):
+        colored_hist = formatted_hist_df.style.map(color_tw_stock)
     else:
-        colored_hist = styled_hist_df.style.applymap(color_tw_stock)
+        colored_hist = formatted_hist_df.style.applymap(color_tw_stock)
 
-    st.dataframe(colored_hist, use_container_width=True)
+    # 🚀 動態高度完美計算 (消滅歷史矩陣捲軸)
+    matrix_height = int(len(formatted_hist_df) * 40) + 50
+
+    st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
 else:
-    st.info("💡 歷史資料載入中，請稍後...")
+    st.info("💡 歷史資料正在重新同步中，請點擊右上角「強制刷新報價」試試！")
