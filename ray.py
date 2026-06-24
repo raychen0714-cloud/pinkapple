@@ -209,11 +209,9 @@ def fetch_and_analyze(manual_input):
             hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
             hist = hist.ffill()
 
-            # 🚀 這裡同時算出「%數」和「絕對金額(元)」
             hist_pct = hist['Close'].pct_change() * 100
             hist_diff = hist['Close'].diff()
             
-            # 將兩者結合成字串存入矩陣中，確保對齊不報錯
             valid_idx = hist_pct.dropna().index
             combined_series = pd.Series([f"{hist_pct[d]:.3f},{hist_diff[d]:.3f}" for d in valid_idx], index=valid_idx)
             all_hist_pct[display_name] = combined_series
@@ -262,7 +260,7 @@ def fetch_and_analyze(manual_input):
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
-        hist_df = hist_df.fillna("0.000,0.000") # 沒交易的補上零字串
+        hist_df = hist_df.fillna("0.000,0.000")
         hist_df.index = hist_df.index.strftime('%m/%d')
         hist_matrix = hist_df.T 
     else:
@@ -295,10 +293,8 @@ else:
     
     def color_tw_stock(val):
         if isinstance(val, str):
-            # 🚀 加入 white-space: pre-wrap 確保歷史矩陣能完美換行顯示！
-            if '🔺' in val or '+' in val or '🔥' in val: return 'color: #ff4b4b; font-weight: bold; white-space: pre-wrap;'
-            elif '🔻' in val or '-' in val or '🚨' in val: return 'color: #09ab3b; font-weight: bold; white-space: pre-wrap;'
-            return 'white-space: pre-wrap;'
+            if '🔺' in val or '+' in val or '🔥' in val: return 'color: #ff4b4b; font-weight: bold;'
+            elif '🔻' in val or '-' in val or '🚨' in val: return 'color: #09ab3b; font-weight: bold;'
         return ''
 
     styled_df = safe_style_map(display_df.style, color_tw_stock, subset=['📈 漲跌', '消息面'])
@@ -340,7 +336,7 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (%數 + 漲跌點數雙顯)
+# 【下方面板】歷史區間漲跌幅矩陣 (解決被切斷的問題)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
@@ -370,23 +366,23 @@ if not history_matrix.empty:
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 格式化引擎：將字串拆解，組合出有斷行的 "%數 \n 金額"
+        # 🚀 格式化引擎：移除換行符號，改用「括號」放在同一排，徹底解決 Streamlit 斷字切頭切尾的問題！
         def format_matrix_value(val):
-            if pd.isna(val) or val == "0.000,0.000": return "➖ 0.00%\n 0.00元"
+            if pd.isna(val) or val == "0.000,0.000": return "➖ 0.00% (0.00元)"
             try:
                 pct_str, diff_str = val.split(',')
                 pct, diff = float(pct_str), float(diff_str)
-                if pct > 0: return f"🔺 +{pct:.2f}%\n(+{diff:.2f}元)"
-                elif pct < 0: return f"🔻 {pct:.2f}%\n({diff:.2f}元)"
-                return "➖ 0.00%\n 0.00元"
+                if pct > 0: return f"🔺 +{pct:.2f}% (+{diff:.2f}元)"
+                elif pct < 0: return f"🔻 {pct:.2f}% ({diff:.2f}元)"
+                return "➖ 0.00% (0.00元)"
             except:
-                return "➖ 0.00%\n 0.00元"
+                return "➖ 0.00% (0.00元)"
             
         formatted_hist_df = recent_history.apply(lambda col: col.map(format_matrix_value))
         colored_hist = safe_style_map(formatted_hist_df.style, color_tw_stock)
         
-        # 📏 加大矩陣行高以容納雙行文字
-        matrix_height = int(len(formatted_hist_df) * 60) + 60
+        # 高度恢復正常設定
+        matrix_height = int(len(formatted_hist_df) * 40) + 50
         st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
