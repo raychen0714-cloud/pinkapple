@@ -16,8 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
-    # 👉 【終極資產防護】：請把 0.0 改成你真實的總配息金額 (例如 150000.0)
-    # 這樣就算雲端伺服器在深夜休眠重啟，你的配息累計也絕對不會歸零！
+    # 👉 【終極資產防護】：請把 0.0 改成你真實的總配息金額
     default_data = {
         "total_div": 0.0, 
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -60,7 +59,7 @@ CUSTOM_NAME_MAP = {
     "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
 }
 
-# --- ⚙️ Pandas 版本相容性顯色包裝器 (徹底消滅 applymap 錯誤) ---
+# --- ⚙️ Pandas 版本相容性顯色包裝器 ---
 def safe_style_map(styler, color_func, subset=None):
     try:
         return styler.map(color_func, subset=subset)
@@ -219,15 +218,12 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 2: continue
             
-            # 🚀 歷史矩陣破關核心：剝離時區並規範化日期，使所有股票時間軸完美對齊
             hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
             hist = hist.ffill()
 
-            # 計算每日回測漲跌幅
             hist_pct = hist['Close'].pct_change() * 100
             all_hist_pct[display_name] = hist_pct.dropna()
 
-            # 綜合即時新聞與消息面判定
             sentiment, latest_title = fetch_news_and_sentiment(name)
 
             rt_info = realtime_data.get(ticker)
@@ -271,12 +267,11 @@ def fetch_and_analyze(manual_input):
     if not df.empty:
         df = df.sort_values(by=["成交量(張)"], ascending=[False]).reset_index(drop=True)
         
-    # 建立歷史對齊大表
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
-        hist_df = hist_df.dropna(how='all') # 移除全部無交易的例假日
-        hist_df = hist_df.fillna(0.0)       # 個別停牌或無資料日強制補零對齊
-        hist_df.index = hist_df.index.strftime('%m/%d') # 對齊完成後再格式化為字串
+        hist_df = hist_df.dropna(how='all')
+        hist_df = hist_df.fillna(0.0)      
+        hist_df.index = hist_df.index.strftime('%m/%d')
         hist_matrix = hist_df.T 
     else:
         hist_matrix = pd.DataFrame()
@@ -306,17 +301,13 @@ else:
     display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🎨 台股紅漲綠跌標準配色引擎
     def color_tw_stock(val):
         if isinstance(val, str):
             if '🔺' in val or '+' in val or '🔥' in val: return 'color: #ff4b4b; font-weight: bold;'
             elif '🔻' in val or '-' in val or '🚨' in val: return 'color: #09ab3b; font-weight: bold;'
         return ''
 
-    # 使用版本相容顯色引擎
     styled_df = safe_style_map(display_df.style, color_tw_stock, subset=['📈 漲跌', '消息面'])
-    
-    # 📐 精準展開高度演算法，加倍緩衝消滅側邊捲動軸
     dynamic_height = int(len(display_df) * 45) + 60
     
     edited_df = st.data_editor(
@@ -355,36 +346,48 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (100% 破關修復)
+# 【下方面板】歷史區間漲跌幅矩陣 (支援「只顯示持有」過濾)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
-# 📅 歷史自訂天數拉桿
-lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=5, key="matrix_slider")
+# 加入排版設計，讓拉桿與 Checkbox 放在同一排
+col_slider, col_check = st.columns([3, 1])
+with col_slider:
+    lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=5, key="matrix_slider")
+with col_check:
+    st.markdown("<div style='margin-top: 35px;'></div>", unsafe_allow_html=True)
+    only_show_held = st.checkbox("✅ 只顯示我持有的標的", value=True)
 
 if not history_matrix.empty:
-    # 切出使用者指定的最後 N 個交易日（橫軸日期）
-    actual_cols = history_matrix.shape[1]
-    slice_days = min(lookback_days, actual_cols)
-    recent_history = history_matrix.iloc[:, -slice_days:]
-    recent_history = recent_history.fillna(0.0) 
     
-    # 將數據轉換為標準帶箭頭字串 (使用通用 Series.map 絕不報錯)
-    def format_matrix_value(val):
-        if pd.isna(val) or val == 0: return "➖ 0.00%"
-        if val > 0: return f"🔺 +{val:.2f}%"
-        return f"🔻 {val:.2f}%"
+    # 🎯 核心過濾器：如果打勾，就只抓「上方表格也有打勾的」股票
+    if only_show_held and not final_data.empty:
+        held_targets = final_data[final_data['📌 持有'] == True]['標的'].tolist()
+        filtered_matrix = history_matrix[history_matrix.index.isin(held_targets)]
+    else:
+        filtered_matrix = history_matrix
+
+    # 如果過濾後沒有東西 (代表使用者沒勾選任何持有股票)
+    if filtered_matrix.empty:
+        st.info("💡 您目前尚未勾選持有任何標的。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
+    else:
+        actual_cols = filtered_matrix.shape[1]
+        slice_days = min(lookback_days, actual_cols)
+        recent_history = filtered_matrix.iloc[:, -slice_days:]
+        recent_history = recent_history.fillna(0.0) 
         
-    formatted_hist_df = recent_history.apply(lambda col: col.map(format_matrix_value))
-    
-    # 套用安全顯色引擎
-    colored_hist = safe_style_map(formatted_hist_df.style, color_tw_stock)
-    
-    # 自適應高度
-    matrix_height = int(len(formatted_hist_df) * 42) + 60
-    
-    # 輸出極具視覺震撼力的歷史追蹤看板
-    st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
+        def format_matrix_value(val):
+            if pd.isna(val) or val == 0: return "➖ 0.00%"
+            if val > 0: return f"🔺 +{val:.2f}%"
+            return f"🔻 {val:.2f}%"
+            
+        formatted_hist_df = recent_history.apply(lambda col: col.map(format_matrix_value))
+        colored_hist = safe_style_map(formatted_hist_df.style, color_tw_stock)
+        
+        # 根據最終過濾出來的股票數量，重新計算完美高度
+        matrix_height = int(len(formatted_hist_df) * 42) + 60
+        
+        st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
