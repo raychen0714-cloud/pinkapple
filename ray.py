@@ -346,12 +346,11 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (支援「只顯示持有」過濾)
+# 【下方面板】歷史區間漲跌幅矩陣 (已完成倒序優化)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
-# 加入排版設計，讓拉桿與 Checkbox 放在同一排
 col_slider, col_check = st.columns([3, 1])
 with col_slider:
     lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=5, key="matrix_slider")
@@ -361,20 +360,21 @@ with col_check:
 
 if not history_matrix.empty:
     
-    # 🎯 核心過濾器：如果打勾，就只抓「上方表格也有打勾的」股票
     if only_show_held and not final_data.empty:
         held_targets = final_data[final_data['📌 持有'] == True]['標的'].tolist()
         filtered_matrix = history_matrix[history_matrix.index.isin(held_targets)]
     else:
         filtered_matrix = history_matrix
 
-    # 如果過濾後沒有東西 (代表使用者沒勾選任何持有股票)
     if filtered_matrix.empty:
         st.info("💡 您目前尚未勾選持有任何標的。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
     else:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
+        
+        # 🚀 這裡就是核心魔法：切出歷史天數後，加上 .iloc[:, ::-1] 讓最新的日期排在最左邊！
         recent_history = filtered_matrix.iloc[:, -slice_days:]
+        recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna(0.0) 
         
         def format_matrix_value(val):
@@ -385,9 +385,7 @@ if not history_matrix.empty:
         formatted_hist_df = recent_history.apply(lambda col: col.map(format_matrix_value))
         colored_hist = safe_style_map(formatted_hist_df.style, color_tw_stock)
         
-        # 根據最終過濾出來的股票數量，重新計算完美高度
         matrix_height = int(len(formatted_hist_df) * 42) + 60
-        
         st.dataframe(colored_hist, use_container_width=True, height=matrix_height)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
