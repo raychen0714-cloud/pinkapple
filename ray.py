@@ -17,7 +17,6 @@ DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
     # 👉 【終極防護】：請把 0.0 改成你真實的總配息金額 (例如 150000.0)
-    # 這樣就算雲端伺服器重啟或大當機，你的財產也絕對不會歸零！
     default_data = {
         "total_div": 0.0, 
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -47,7 +46,7 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# --- 📘 字典區 (您的客製化全中文名稱) ---
+# --- 📘 字典區 (您的客製化全中文名稱，永久保留) ---
 CUSTOM_NAME_MAP = {
     "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "2317.TW": "鴻海",
     "2327.TW": "國巨", "3711.TW": "日月光投控", "6742.TW": "澤米", "6770.TW": "力積電",
@@ -60,7 +59,7 @@ CUSTOM_NAME_MAP = {
     "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
 }
 
-# --- 📰 Google News RSS 爬蟲引擎 (保證不無) ---
+# --- 📰 Google News RSS 爬蟲引擎 ---
 @st.cache_data(ttl=600)
 def fetch_news_and_sentiment(stock_code, stock_name):
     try:
@@ -74,9 +73,7 @@ def fetch_news_and_sentiment(stock_code, stock_name):
             
         latest_title = items[0].find('title').text.split(" - ")[0] 
         
-        # 抓前兩篇新聞來做簡單的多空情緒分析
         combined_text = " ".join([item.find('title').text for item in items[:2]])
-        
         pos_kw = ["大漲", "創高", "買超", "看好", "利多", "上修", "受惠", "營收增", "突破", "強勁", "飆", "高息", "亮眼", "漲停"]
         neg_kw = ["跌", "賣超", "看壞", "利空", "下修", "衰退", "砍單", "外資逃", "探底", "疲弱", "保守", "降評", "重挫", "跌停"]
         
@@ -90,6 +87,39 @@ def fetch_news_and_sentiment(stock_code, stock_name):
         return sentiment, latest_title
     except Exception:
         return "➖ 中性", "新聞讀取中..."
+
+# --- 📊 籌碼雷達 (強勢回歸！) ---
+@st.cache_data(ttl=3600)
+def fetch_twse_institutional_data():
+    try:
+        url = "https://openapi.twse.com.tw/v1/fund/T86_ALL"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+        chip_dict = {}
+        for item in data:
+            code = item.get("Code")
+            try:
+                fi_net = float(item.get("ForeignInvestorBuySellAmount", 0).replace(",", ""))
+                it_net = float(item.get("InvestmentTrustBuySellAmount", 0).replace(",", ""))
+            except: fi_net, it_net = 0, 0
+            
+            threshold = 1000000
+            if fi_net > threshold and it_net > threshold: status = "🔥 內外資齊買"
+            elif fi_net < -threshold and it_net < -threshold: status = "🚨 內外資齊賣"
+            elif fi_net > threshold: status = "📈 外資大量買進"
+            elif fi_net < -threshold: status = "⚠️ 外資大量倒貨"
+            elif it_net > threshold: status = "💎 投信大量買進"
+            elif it_net < -threshold: status = "⚠️ 投信大量倒貨"
+            elif fi_net > 0 and it_net > 0: status = "🟢 雙重偏多"
+            elif fi_net < 0 and it_net < 0: status = "🔴 雙重偏空"
+            elif fi_net > 0: status = "外資買超"
+            elif fi_net < 0: status = "外資賣超"
+            else: status = "➖ 籌碼中性"
+            chip_dict[code] = status
+        return chip_dict
+    except: return {}
+
+chip_data_map = fetch_twse_institutional_data()
 
 # --- ⚡ 零延遲引擎：證交所官方 API ---
 @st.cache_data(ttl=5)
@@ -177,7 +207,7 @@ if manual_tickers_str != saved_tickers:
     save_data(st.session_state.app_data)
     st.rerun()
 
-# --- 🧠 核心雙引擎：即時報價 + 新聞掃描 ---
+# --- 🧠 核心引擎：報價 + 籌碼 + 新聞 ---
 @st.cache_data(ttl=60)  
 def fetch_and_analyze(manual_input):
     tickers_to_fetch = {}
@@ -211,7 +241,6 @@ def fetch_and_analyze(manual_input):
                 if not hist.empty: ticker = ticker_two 
                     
             if hist.empty or len(hist) < 10: continue
-            
             hist = hist.ffill()
 
             rt_info = realtime_data.get(ticker)
@@ -224,12 +253,13 @@ def fetch_and_analyze(manual_input):
                 prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close_px
                 vol = float(hist['Volume'].iloc[-1]) / 1000
                 
+            # 🚀 這裡完美修復了「漲跌幅度」與「金額」！
             price_change_abs = close_px - prev_close 
             price_change_pct = (price_change_abs / prev_close) * 100 if prev_close > 0 else 0
             
-            if price_change_abs > 0: change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}"
-            elif price_change_abs < 0: change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}"
-            else: change_str = "➖ 0.00% / 0.00"
+            if price_change_abs > 0: change_str = f"🔺 +{price_change_pct:.2f}% / +{price_change_abs:.2f}元"
+            elif price_change_abs < 0: change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}元"
+            else: change_str = "➖ 0.00% / 0.00元"
 
             ma5 = float(hist['Close'].tail(5).mean())   
             ma20 = float(hist['Close'].tail(20).mean())  
@@ -240,10 +270,9 @@ def fetch_and_analyze(manual_input):
             elif ma60 > 0 and close_px > ma60: trend_status = "🔼 站上季線" 
             else: trend_status = "🔽 跌破季線" 
 
-            # 呼叫強大的 Google RSS 新聞爬蟲
             sentiment, latest_title = fetch_news_and_sentiment(ticker, name)
-
             code_only = ticker.replace(".TW", "").replace(".TWO","")
+            
             results.append({
                 "原始代號": ticker,  
                 "代號": code_only, 
@@ -251,6 +280,7 @@ def fetch_and_analyze(manual_input):
                 "現價": round(close_px, 2), 
                 "📈 漲跌": change_str, 
                 "成交量(張)": int(vol),
+                "📊 官方籌碼": chip_data_map.get(code_only, "➖ 暫無資料"), # 🚀 籌碼雷達強勢回歸！
                 "趨勢格局": trend_status,  
                 "🤖 消息面": sentiment,
                 "📰 最新新聞": latest_title
@@ -263,14 +293,14 @@ def fetch_and_analyze(manual_input):
     return df 
 
 st.markdown("---")
-st.subheader("🔍 PRO 觀察雷達 (即時報價 + RSS新聞直連)")
+st.subheader("🔍 PRO 觀察雷達 (即時報價 + 籌碼 + 輿情)")
 col1, col2 = st.columns([8, 2])
 with col2:
     if st.button("🔄 強制刷新報價與新聞", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("官方 MIS 連線中... 正在讀取 Google 財經新聞網..."):
+with st.spinner("官方 MIS 連線中... 正在載入籌碼與財經新聞..."):
     final_data = fetch_and_analyze(manual_tickers_str)
 
 if final_data.empty:
@@ -280,10 +310,10 @@ else:
     final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '🤖 消息面', '📰 最新新聞']]
+    # 重新排列欄位，把籌碼也塞進去
+    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '📊 官方籌碼', '趨勢格局', '🤖 消息面', '📰 最新新聞']]
     display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
-    # 🎨 台股標準顏色：紅漲綠跌
     def color_tw_stock(val):
         if isinstance(val, str):
             if '🔺' in val or '+' in val or '🔥' in val: return 'color: #ff4b4b; font-weight: bold;'
@@ -295,7 +325,7 @@ else:
     else:
         styled_df = display_df.style.applymap(color_tw_stock, subset=['📈 漲跌', '🤖 消息面'])
     
-    # 📏 完美無捲軸高度計算 (每行38像素 + 標頭45像素)
+    # 高度微調：確保塞得下所有東西
     dynamic_height = int(len(display_df) * 38) + 45
     
     edited_df = st.data_editor(
@@ -304,17 +334,18 @@ else:
         hide_index=True, 
         use_container_width=True,
         height=dynamic_height, 
-        disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局", "🤖 消息面", "📰 最新新聞"], 
+        disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "📊 官方籌碼", "趨勢格局", "🤖 消息面", "📰 最新新聞"], 
         column_config={
             "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=50),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=140), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
-            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=120), 
+            "📈 漲跌": st.column_config.TextColumn("📈 漲跌", width=130), # 稍微加寬給漲跌幅度
             "成交量(張)": st.column_config.NumberColumn("成交量", width=70),
-            "趨勢格局": st.column_config.TextColumn("趨勢", width=100), 
-            "🤖 消息面": st.column_config.TextColumn("消息面", width=100), 
-            "📰 最新新聞": st.column_config.TextColumn("📰 最新新聞標題", width=350) 
+            "📊 官方籌碼": st.column_config.TextColumn("📊 籌碼動向", width=110), 
+            "趨勢格局": st.column_config.TextColumn("趨勢", width=90), 
+            "🤖 消息面": st.column_config.TextColumn("消息面", width=90), 
+            "📰 最新新聞": st.column_config.TextColumn("📰 最新新聞標題", width=320) 
         }
     )
 
