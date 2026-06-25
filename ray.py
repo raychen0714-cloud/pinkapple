@@ -19,9 +19,10 @@ def load_data():
     default_data = {
         # 🚨🚨🚨 【徹底解決每天歸零方案】 🚨🚨🚨
         # 請把下面的 0.0 直接改成您現在的「真實總配息金額」 (例如 155000.0)
+        # 這樣就算雲端伺服器重啟清空檔案，每次開機也絕對會從這個數字開始加！
         "total_div": 0.0, 
         
-        # 🔒 新增：永久記憶您的「歷史追蹤天數」
+        # 🔒 永久記憶您的「歷史追蹤天數」
         "lookback_days": 5,
         
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
@@ -60,7 +61,7 @@ CUSTOM_NAME_MAP = {
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
-    "00905.TW": "FT台灣Smart", "00403A.TW": "主討統一升級50"
+    "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
 }
 
 # --- ⚙️ Pandas 顯色引擎相容包 ---
@@ -192,8 +193,8 @@ def fetch_and_analyze(manual_input):
     results = [] 
     all_hist_pct = {} 
     
-    # 取得台灣時間的今天日期，用來物理切割 Yahoo 避免 Bug
-    today_dt = pd.Timestamp.now('Asia/Taipei').normalize().tz_localize(None)
+    # 取得台灣今天的純日期物件 (不含時分秒)
+    today_date = pd.Timestamp.now('Asia/Taipei').date()
     
     for ticker, name in tickers_to_fetch.items():
         code_only = ticker.split('.')[0]
@@ -215,28 +216,35 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 2: continue
             
-            # 清理時區與重複日期的 Bug
-            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+            # 🚀 【核心除錯關鍵】：拋棄所有時區轉換，直接抓取「純日期」比對
+            hist.index = pd.to_datetime(hist.index).date
             hist = hist.loc[~hist.index.duplicated(keep='last')]
             
-            # 🚀 終極除錯核心：強制砍掉 Yahoo 裡面的「今天」數據
-            # 確保前面的 6/24、6/23 漲跌幅是根據真正收盤價算出來的，絕不為 0！
-            hist = hist[hist.index < today_dt]
-            hist = hist.ffill()
+            # 🚀 物理切割：強制砍掉 Yahoo 歷史數據裡的「今天」
+            # 這樣能百分之百確保「昨天(6/24)」、「前天(6/23)」算出來的漲跌幅絕對正常、絕不為 0！
+            hist = hist[hist.index < today_date]
+            hist = hist.sort_index()
 
             hist_pct = hist['Close'].pct_change() * 100
             hist_diff = hist['Close'].diff()
             
-            # 🚀 注入最準確的 TWSE 即時資料，彌補我們砍掉的今天
+            # 將歷史日期轉為 %m/%d 字串建立新序列
+            pct_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_pct.index], data=hist_pct.values)
+            diff_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_diff.index], data=hist_diff.values)
+            
+            # 🚀 官方 API 數據注入：今天(6/25) 的數據 100% 強制採用證交所最即時、精準的資料
             rt_info = realtime_data.get(ticker)
+            today_str = today_date.strftime('%m/%d')
+            
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 live_diff = rt_info['price'] - rt_info['prev_close']
                 live_pct = (live_diff / rt_info['prev_close']) * 100
-                hist_pct[today_dt] = live_pct
-                hist_diff[today_dt] = live_diff
+                pct_series[today_str] = live_pct
+                diff_series[today_str] = live_diff
             
-            valid_idx = hist_pct.dropna().index
-            combined_series = pd.Series([f"{hist_pct[d]:.3f},{hist_diff[d]:.3f}" for d in valid_idx], index=valid_idx)
+            # 清除無效值後，融合成一格雙顯字串
+            valid_keys = pct_series.dropna().index
+            combined_series = pd.Series([f"{pct_series[k]:.3f},{diff_series[k]:.3f}" for k in valid_keys], index=valid_keys)
             all_hist_pct[display_name] = combined_series
 
             sentiment, latest_title = fetch_news_and_sentiment(name)
@@ -283,8 +291,7 @@ def fetch_and_analyze(manual_input):
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
         hist_df = hist_df.fillna("0.000,0.000")
-        hist_df.sort_index(inplace=True)
-        hist_df.index = hist_df.index.strftime('%m/%d')
+        hist_df.sort_index(ascending=True, inplace=True) # 確保日期排序由遠到近
         hist_matrix = hist_df.T 
     else:
         hist_matrix = pd.DataFrame()
@@ -359,18 +366,18 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣
+# 【下方面板】歷史區間漲跌幅矩陣 (記憶天數＋數據完全修正版)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
 col_slider, col_check = st.columns([3, 1])
 with col_slider:
-    # 🔒 這裡讀取我們存在記憶體裡的天數，不再重整就回溯！
+    # 🔒 從永久記憶庫讀取天數設定
     saved_lookback = st.session_state.app_data.get("lookback_days", 5)
     lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=saved_lookback, key="matrix_slider")
     
-    # 如果拉桿數值有變動，馬上存檔
+    # 若使用者手動拉動了天數，立即儲存，不再被重整打敗
     if lookback_days != saved_lookback:
         st.session_state.app_data["lookback_days"] = lookback_days
         save_data(st.session_state.app_data)
@@ -387,25 +394,28 @@ if not history_matrix.empty:
         filtered_matrix = history_matrix
 
     if filtered_matrix.empty:
-        st.info("💡 您目前尚未勾選持有任何標的。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
+        st.info("💡 您目前尚未勾選持有任何標列。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
     else:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
         
+        # 擷取指定天數，並倒序排列 (今天在最左邊，往右延伸到過去)
         recent_history = filtered_matrix.iloc[:, -slice_days:]
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 HTML 渲染引擎
+        # 原生 HTML 高級自適應矩陣渲染
         html_code = '<div style="overflow-x: auto; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">'
         html_code += '<table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px; background-color: white;">'
         
+        # 標題列 (固定左側標的欄位)
         html_code += '<thead><tr style="background-color: #f8f9fa;">'
         html_code += '<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 140px; position: sticky; left: 0; background-color: #f8f9fa; z-index: 2;">📌 標的名稱</th>'
         for col in recent_history.columns:
             html_code += f'<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 110px;">{col}</th>'
         html_code += '</tr></thead><tbody>'
         
+        # 內容列
         for idx, row in recent_history.iterrows():
             html_code += f'<tr><td style="padding: 12px 10px; border: 1px solid #e9ecef; font-weight: bold; text-align: left; position: sticky; left: 0; background-color: white; z-index: 1;">{idx}</td>'
             for val in row:
