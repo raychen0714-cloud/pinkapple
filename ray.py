@@ -16,8 +16,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
+    # 🚨 【徹底解決歸零方案】：請直接將 0.0 改成您目前的真實總配息金額 (例如 155000.0)！
+    # 這樣就算雲端重啟清空 JSON，每次開機也都會從這個基準點開始往上加，絕對不會變回 0！
     default_data = {
-        "total_div": 0.0, 
+        "total_div": 0.0,  # <--- 在這裡輸入您的真實金額
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770"
     }
@@ -336,7 +338,7 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (✨ 動態 Markdown 渲染 - 絕對不切斷版)
+# 【下方面板】歷史區間漲跌幅矩陣 (純 HTML 絕對不破版)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
@@ -361,36 +363,44 @@ if not history_matrix.empty:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
         
-        # 切片並倒序 (今天在最左邊)
+        # 切片並倒序 (今天在最左邊，依序往右延伸)
         recent_history = filtered_matrix.iloc[:, -slice_days:]
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 突破系統限制！改用 Markdown 語法生成表格，<br> 自動長高，絕對不會被切斷！
-        md_str = "| 📌 標的名稱 | " + " | ".join(recent_history.columns) + " |\n"
-        md_str += "|:---|:---:" * len(recent_history.columns) + "|\n"
+        # 🚀 突破系統表格限制！改用原生 HTML 渲染，保證「%上/金額下」且帶有水平滾動條
+        html_code = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px;">'
         
+        # 標題列
+        html_code += '<thead><tr style="background-color: #f0f2f6;">'
+        html_code += '<th style="padding: 10px; border: 1px solid #ddd; min-width: 140px;">📌 標的名稱</th>'
+        for col in recent_history.columns:
+            html_code += f'<th style="padding: 10px; border: 1px solid #ddd; min-width: 100px;">{col}</th>'
+        html_code += '</tr></thead><tbody>'
+        
+        # 內容列
         for idx, row in recent_history.iterrows():
-            row_cells = []
+            html_code += f'<tr><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; text-align: left;">{idx}</td>'
             for val in row:
                 if pd.isna(val) or val == "0.000,0.000": 
-                    row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+                    html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
                 else:
                     try:
                         pct_str, diff_str = val.split(',')
                         pct, diff = float(pct_str), float(diff_str)
                         if pct > 0: 
-                            row_cells.append(f"<span style='color:#ff4b4b;font-weight:bold;'>🔺 +{pct:.2f}%</span><br><span style='color:#ff4b4b;font-size:0.85em;'>(+{diff:.2f}元)</span>")
+                            html_code += f'<td style="padding: 10px; border: 1px solid #ddd; line-height: 1.5;"><span style="color:#ff4b4b;font-weight:bold;">🔺 +{pct:.2f}%</span><br><span style="color:#ff4b4b;font-size:0.85em;">(+{diff:.2f}元)</span></td>'
                         elif pct < 0: 
-                            row_cells.append(f"<span style='color:#09ab3b;font-weight:bold;'>🔻 {pct:.2f}%</span><br><span style='color:#09ab3b;font-size:0.85em;'>({diff:.2f}元)</span>")
+                            html_code += f'<td style="padding: 10px; border: 1px solid #ddd; line-height: 1.5;"><span style="color:#09ab3b;font-weight:bold;">🔻 {pct:.2f}%</span><br><span style="color:#09ab3b;font-size:0.85em;">({diff:.2f}元)</span></td>'
                         else:
-                            row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+                            html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
                     except:
-                        row_cells.append("➖ 0.00%<br><span style='font-size:0.85em;color:gray;'>(0.00元)</span>")
+                        html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
+            html_code += '</tr>'
             
-            md_str += f"| **{idx}** | " + " | ".join(row_cells) + " |\n"
+        html_code += '</tbody></table></div>'
         
-        # 將最終生成的表格用 Markdown 渲染出來
-        st.markdown(md_str, unsafe_allow_html=True)
+        # 輸出無敵 HTML 表格
+        st.markdown(html_code, unsafe_allow_html=True)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
