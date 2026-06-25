@@ -16,10 +16,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
-    # 🚨 【徹底解決歸零方案】：請直接將 0.0 改成您目前的真實總配息金額 (例如 155000.0)！
-    # 這樣就算雲端重啟清空 JSON，每次開機也都會從這個基準點開始往上加，絕對不會變回 0！
     default_data = {
-        "total_div": 0.0,  # <--- 在這裡輸入您的真實金額
+        # 🚨🚨🚨 【徹底解決每天歸零方案】 🚨🚨🚨
+        # 請把下面的 0.0 直接改成您現在的「真實總配息金額」 (例如 155000.0)
+        # 這樣就算雲端伺服器重啟清空檔案，每次開機也絕對會從這個數字開始加！
+        "total_div": 0.0, 
+        
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770"
     }
@@ -199,27 +201,41 @@ def fetch_and_analyze(manual_input):
                     if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                 except: pass
 
-            hist = tk.history(period="1mo", auto_adjust=False)
+            # 使用 auto_adjust=True 避免配息造成技術性跌幅誤判
+            hist = tk.history(period="1mo", auto_adjust=True)
             if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
                 tk = yf.Ticker(ticker_two)
-                hist = tk.history(period="1mo", auto_adjust=False)
+                hist = tk.history(period="1mo", auto_adjust=True)
                 if not hist.empty: ticker = ticker_two 
                     
             if hist.empty or len(hist) < 2: continue
             
-            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+            # 🚀 解決「6/24 時差亂跳」的終極解法：強制轉回台北時間再處理！
+            if hist.index.tz is not None:
+                hist.index = hist.index.tz_convert('Asia/Taipei')
+            hist.index = hist.index.normalize().tz_localize(None)
+            hist = hist.loc[~hist.index.duplicated(keep='last')] # 砍掉 Yahoo 常見的重複日期 Bug
             hist = hist.ffill()
 
             hist_pct = hist['Close'].pct_change() * 100
             hist_diff = hist['Close'].diff()
+            
+            # 🚀 注入最準確的 TWSE 即時資料，覆蓋 Yahoo 延遲，保證今天最新這格 100% 正確
+            rt_info = realtime_data.get(ticker)
+            today_dt = pd.Timestamp.now('Asia/Taipei').normalize().tz_localize(None)
+            
+            if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
+                live_diff = rt_info['price'] - rt_info['prev_close']
+                live_pct = (live_diff / rt_info['prev_close']) * 100
+                hist_pct[today_dt] = live_pct
+                hist_diff[today_dt] = live_diff
             
             valid_idx = hist_pct.dropna().index
             combined_series = pd.Series([f"{hist_pct[d]:.3f},{hist_diff[d]:.3f}" for d in valid_idx], index=valid_idx)
             all_hist_pct[display_name] = combined_series
 
             sentiment, latest_title = fetch_news_and_sentiment(name)
-            rt_info = realtime_data.get(ticker)
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 close_px = rt_info['price']
                 prev_close = rt_info['prev_close']
@@ -263,6 +279,9 @@ def fetch_and_analyze(manual_input):
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
         hist_df = hist_df.fillna("0.000,0.000")
+        
+        # 確保依據日期正確排序，然後再轉成 字串
+        hist_df.sort_index(inplace=True)
         hist_df.index = hist_df.index.strftime('%m/%d')
         hist_matrix = hist_df.T 
     else:
@@ -338,7 +357,7 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (純 HTML 絕對不破版)
+# 【下方面板】歷史區間漲跌幅矩陣 (✨ HTML 動態表格 - 完美上下排版)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
@@ -363,44 +382,46 @@ if not history_matrix.empty:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
         
-        # 切片並倒序 (今天在最左邊，依序往右延伸)
+        # 擷取最後天數，並進行倒序 (最新一天在最左邊，依序往右延伸)
         recent_history = filtered_matrix.iloc[:, -slice_days:]
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 突破系統表格限制！改用原生 HTML 渲染，保證「%上/金額下」且帶有水平滾動條
-        html_code = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px;">'
+        # 🚀 突破系統表格限制！改用原生 HTML 渲染，保證「%數在上、金額在下」且帶有流暢水平捲動軸！
+        # 另外加入 Sticky 屬性，這樣往右拉的時候，最左邊的「股票名稱」才不會消失！
+        html_code = '<div style="overflow-x: auto; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">'
+        html_code += '<table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px; background-color: white;">'
         
         # 標題列
-        html_code += '<thead><tr style="background-color: #f0f2f6;">'
-        html_code += '<th style="padding: 10px; border: 1px solid #ddd; min-width: 140px;">📌 標的名稱</th>'
+        html_code += '<thead><tr style="background-color: #f8f9fa;">'
+        html_code += '<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 140px; position: sticky; left: 0; background-color: #f8f9fa; z-index: 2;">📌 標的名稱</th>'
         for col in recent_history.columns:
-            html_code += f'<th style="padding: 10px; border: 1px solid #ddd; min-width: 100px;">{col}</th>'
+            html_code += f'<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 110px;">{col}</th>'
         html_code += '</tr></thead><tbody>'
         
         # 內容列
         for idx, row in recent_history.iterrows():
-            html_code += f'<tr><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; text-align: left;">{idx}</td>'
+            html_code += f'<tr><td style="padding: 12px 10px; border: 1px solid #e9ecef; font-weight: bold; text-align: left; position: sticky; left: 0; background-color: white; z-index: 1;">{idx}</td>'
             for val in row:
                 if pd.isna(val) or val == "0.000,0.000": 
-                    html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
+                    html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
                 else:
                     try:
                         pct_str, diff_str = val.split(',')
                         pct, diff = float(pct_str), float(diff_str)
                         if pct > 0: 
-                            html_code += f'<td style="padding: 10px; border: 1px solid #ddd; line-height: 1.5;"><span style="color:#ff4b4b;font-weight:bold;">🔺 +{pct:.2f}%</span><br><span style="color:#ff4b4b;font-size:0.85em;">(+{diff:.2f}元)</span></td>'
+                            html_code += f'<td style="padding: 10px; border: 1px solid #e9ecef; line-height: 1.6;"><span style="color:#ff4b4b;font-weight:bold;font-size:1.05em;">🔺 +{pct:.2f}%</span><br><span style="color:#ff4b4b;font-size:0.9em;">(+{diff:.2f}元)</span></td>'
                         elif pct < 0: 
-                            html_code += f'<td style="padding: 10px; border: 1px solid #ddd; line-height: 1.5;"><span style="color:#09ab3b;font-weight:bold;">🔻 {pct:.2f}%</span><br><span style="color:#09ab3b;font-size:0.85em;">({diff:.2f}元)</span></td>'
+                            html_code += f'<td style="padding: 10px; border: 1px solid #e9ecef; line-height: 1.6;"><span style="color:#09ab3b;font-weight:bold;font-size:1.05em;">🔻 {pct:.2f}%</span><br><span style="color:#09ab3b;font-size:0.9em;">({diff:.2f}元)</span></td>'
                         else:
-                            html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
+                            html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
                     except:
-                        html_code += '<td style="padding: 10px; border: 1px solid #ddd; color: gray; line-height: 1.5;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
+                        html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
             html_code += '</tr>'
             
         html_code += '</tbody></table></div>'
         
-        # 輸出無敵 HTML 表格
+        # 將最終生成的表格用 Markdown 渲染出來
         st.markdown(html_code, unsafe_allow_html=True)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
