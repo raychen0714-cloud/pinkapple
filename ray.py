@@ -19,7 +19,6 @@ def load_data():
     default_data = {
         # 🚨🚨🚨 【徹底解決每天歸零方案】 🚨🚨🚨
         # 請把下面的 0.0 直接改成您現在的「真實總配息金額」 (例如 155000.0)
-        # 這樣就算雲端伺服器重啟清空檔案，每次開機也絕對會從這個數字開始加！
         "total_div": 0.0, 
         
         # 🔒 永久記憶您的「歷史追蹤天數」
@@ -193,7 +192,7 @@ def fetch_and_analyze(manual_input):
     results = [] 
     all_hist_pct = {} 
     
-    # 取得台灣今天的純日期物件 (不含時分秒)
+    # 取得台灣今天的純日期物件
     today_date = pd.Timestamp.now('Asia/Taipei').date()
     
     for ticker, name in tickers_to_fetch.items():
@@ -216,23 +215,26 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 2: continue
             
-            # 🚀 【核心除錯關鍵】：拋棄所有時區轉換，直接抓取「純日期」比對
-            hist.index = pd.to_datetime(hist.index).date
+            # 過濾掉 Yahoo 常見的 0 交易量假資料
+            hist = hist[hist['Volume'] > 0]
+            
+            # 轉換為純日期
+            if hist.index.tz is None:
+                hist.index = hist.index.tz_localize('UTC')
+            hist.index = hist.index.tz_convert('Asia/Taipei').date
             hist = hist.loc[~hist.index.duplicated(keep='last')]
             
-            # 🚀 物理切割：強制砍掉 Yahoo 歷史數據裡的「今天」
-            # 這樣能百分之百確保「昨天(6/24)」、「前天(6/23)」算出來的漲跌幅絕對正常、絕不為 0！
+            # 物理切割：強制砍掉「今天」的歷史數據
             hist = hist[hist.index < today_date]
             hist = hist.sort_index()
 
             hist_pct = hist['Close'].pct_change() * 100
             hist_diff = hist['Close'].diff()
             
-            # 將歷史日期轉為 %m/%d 字串建立新序列
             pct_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_pct.index], data=hist_pct.values)
             diff_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_diff.index], data=hist_diff.values)
             
-            # 🚀 官方 API 數據注入：今天(6/25) 的數據 100% 強制採用證交所最即時、精準的資料
+            # 🚀 官方 API 數據注入 (今天 6/25)
             rt_info = realtime_data.get(ticker)
             today_str = today_date.strftime('%m/%d')
             
@@ -241,8 +243,24 @@ def fetch_and_analyze(manual_input):
                 live_pct = (live_diff / rt_info['prev_close']) * 100
                 pct_series[today_str] = live_pct
                 diff_series[today_str] = live_diff
+                
+                # 🚀 終極修復：Yahoo ETF 延遲 Bug 智能補丁 (修復 6/24 都是 0 的問題)
+                if not hist.empty:
+                    last_yahoo_date = hist.index[-1]
+                    # 抓出真正的「上一個工作日」
+                    last_bday = pd.bdate_range(end=today_date - pd.Timedelta(days=1), periods=1)[0].date()
+                    
+                    # 如果 Yahoo 最新的資料比上一個工作日還舊 (代表 ETF 漏更新了 6/24)
+                    if last_yahoo_date < last_bday:
+                        last_yahoo_close = hist['Close'].iloc[-1]
+                        # 直接用證交所的昨日收盤價，推算出漏掉的那一天！
+                        missed_diff = rt_info['prev_close'] - last_yahoo_close
+                        missed_pct = (missed_diff / last_yahoo_close) * 100
+                        
+                        last_bday_str = last_bday.strftime('%m/%d')
+                        pct_series[last_bday_str] = missed_pct
+                        diff_series[last_bday_str] = missed_diff
             
-            # 清除無效值後，融合成一格雙顯字串
             valid_keys = pct_series.dropna().index
             combined_series = pd.Series([f"{pct_series[k]:.3f},{diff_series[k]:.3f}" for k in valid_keys], index=valid_keys)
             all_hist_pct[display_name] = combined_series
@@ -290,8 +308,9 @@ def fetch_and_analyze(manual_input):
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
-        hist_df = hist_df.fillna("0.000,0.000")
-        hist_df.sort_index(ascending=True, inplace=True) # 確保日期排序由遠到近
+        # 🚀 改為 NaN,NaN 以便後續精準判斷是 0.00% 還是「待更新」
+        hist_df = hist_df.fillna("NaN,NaN")
+        hist_df.sort_index(ascending=True, inplace=True)
         hist_matrix = hist_df.T 
     else:
         hist_matrix = pd.DataFrame()
@@ -366,18 +385,15 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (記憶天數＋數據完全修正版)
+# 【下方面板】歷史區間漲跌幅矩陣 (✨ ETF 漏接資料完美還原版)
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
 col_slider, col_check = st.columns([3, 1])
 with col_slider:
-    # 🔒 從永久記憶庫讀取天數設定
     saved_lookback = st.session_state.app_data.get("lookback_days", 5)
     lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=saved_lookback, key="matrix_slider")
-    
-    # 若使用者手動拉動了天數，立即儲存，不再被重整打敗
     if lookback_days != saved_lookback:
         st.session_state.app_data["lookback_days"] = lookback_days
         save_data(st.session_state.app_data)
@@ -394,32 +410,30 @@ if not history_matrix.empty:
         filtered_matrix = history_matrix
 
     if filtered_matrix.empty:
-        st.info("💡 您目前尚未勾選持有任何標列。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
+        st.info("💡 您目前尚未勾選持有任何標的。請在上方表格勾選「📌 持有」，或取消右側「✅ 只顯示我持有的標的」以查看全部。")
     else:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
         
-        # 擷取指定天數，並倒序排列 (今天在最左邊，往右延伸到過去)
         recent_history = filtered_matrix.iloc[:, -slice_days:]
         recent_history = recent_history.iloc[:, ::-1] 
-        recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 原生 HTML 高級自適應矩陣渲染
         html_code = '<div style="overflow-x: auto; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">'
         html_code += '<table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px; background-color: white;">'
         
-        # 標題列 (固定左側標的欄位)
         html_code += '<thead><tr style="background-color: #f8f9fa;">'
         html_code += '<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 140px; position: sticky; left: 0; background-color: #f8f9fa; z-index: 2;">📌 標的名稱</th>'
         for col in recent_history.columns:
             html_code += f'<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 110px;">{col}</th>'
         html_code += '</tr></thead><tbody>'
         
-        # 內容列
         for idx, row in recent_history.iterrows():
             html_code += f'<tr><td style="padding: 12px 10px; border: 1px solid #e9ecef; font-weight: bold; text-align: left; position: sticky; left: 0; background-color: white; z-index: 1;">{idx}</td>'
             for val in row:
-                if pd.isna(val) or val == "0.000,0.000": 
+                # 🚀 誠實顯示：如果 Yahoo 真的是連舊資料都漏給，就顯示「待更新」，不再顯示假 0.00%！
+                if pd.isna(val) or val == "NaN,NaN": 
+                    html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">⏳ 待更新<br><span style="font-size: 0.8em;">(Yahoo延遲)</span></td>'
+                elif val == "0.000,0.000":
                     html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">➖ 0.00%<br><span style="font-size: 0.85em;">(0.00元)</span></td>'
                 else:
                     try:
