@@ -19,8 +19,10 @@ def load_data():
     default_data = {
         # 🚨🚨🚨 【徹底解決每天歸零方案】 🚨🚨🚨
         # 請把下面的 0.0 直接改成您現在的「真實總配息金額」 (例如 155000.0)
-        # 這樣就算雲端伺服器重啟清空檔案，每次開機也絕對會從這個數字開始加！
         "total_div": 0.0, 
+        
+        # 🔒 新增：永久記憶您的「歷史追蹤天數」
+        "lookback_days": 5,
         
         "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
         "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770"
@@ -58,7 +60,7 @@ CUSTOM_NAME_MAP = {
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
-    "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50"
+    "00905.TW": "FT台灣Smart", "00403A.TW": "主討統一升級50"
 }
 
 # --- ⚙️ Pandas 顯色引擎相容包 ---
@@ -190,6 +192,9 @@ def fetch_and_analyze(manual_input):
     results = [] 
     all_hist_pct = {} 
     
+    # 取得台灣時間的今天日期，用來物理切割 Yahoo 避免 Bug
+    today_dt = pd.Timestamp.now('Asia/Taipei').normalize().tz_localize(None)
+    
     for ticker, name in tickers_to_fetch.items():
         code_only = ticker.split('.')[0]
         display_name = f"{code_only} {name}"
@@ -201,7 +206,6 @@ def fetch_and_analyze(manual_input):
                     if real_name: name = real_name[:8] + ".." if len(real_name) > 8 else real_name
                 except: pass
 
-            # 使用 auto_adjust=True 避免配息造成技術性跌幅誤判
             hist = tk.history(period="1mo", auto_adjust=True)
             if hist.empty and ticker.endswith(".TW"):
                 ticker_two = ticker.replace(".TW", ".TWO")
@@ -211,20 +215,20 @@ def fetch_and_analyze(manual_input):
                     
             if hist.empty or len(hist) < 2: continue
             
-            # 🚀 解決「6/24 時差亂跳」的終極解法：強制轉回台北時間再處理！
-            if hist.index.tz is not None:
-                hist.index = hist.index.tz_convert('Asia/Taipei')
-            hist.index = hist.index.normalize().tz_localize(None)
-            hist = hist.loc[~hist.index.duplicated(keep='last')] # 砍掉 Yahoo 常見的重複日期 Bug
+            # 清理時區與重複日期的 Bug
+            hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+            hist = hist.loc[~hist.index.duplicated(keep='last')]
+            
+            # 🚀 終極除錯核心：強制砍掉 Yahoo 裡面的「今天」數據
+            # 確保前面的 6/24、6/23 漲跌幅是根據真正收盤價算出來的，絕不為 0！
+            hist = hist[hist.index < today_dt]
             hist = hist.ffill()
 
             hist_pct = hist['Close'].pct_change() * 100
             hist_diff = hist['Close'].diff()
             
-            # 🚀 注入最準確的 TWSE 即時資料，覆蓋 Yahoo 延遲，保證今天最新這格 100% 正確
+            # 🚀 注入最準確的 TWSE 即時資料，彌補我們砍掉的今天
             rt_info = realtime_data.get(ticker)
-            today_dt = pd.Timestamp.now('Asia/Taipei').normalize().tz_localize(None)
-            
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 live_diff = rt_info['price'] - rt_info['prev_close']
                 live_pct = (live_diff / rt_info['prev_close']) * 100
@@ -279,8 +283,6 @@ def fetch_and_analyze(manual_input):
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
         hist_df = hist_df.fillna("0.000,0.000")
-        
-        # 確保依據日期正確排序，然後再轉成 字串
         hist_df.sort_index(inplace=True)
         hist_df.index = hist_df.index.strftime('%m/%d')
         hist_matrix = hist_df.T 
@@ -357,14 +359,22 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (✨ HTML 動態表格 - 完美上下排版)
+# 【下方面板】歷史區間漲跌幅矩陣
 # ==========================================
 st.markdown("---")
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
 col_slider, col_check = st.columns([3, 1])
 with col_slider:
-    lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=5, key="matrix_slider")
+    # 🔒 這裡讀取我們存在記憶體裡的天數，不再重整就回溯！
+    saved_lookback = st.session_state.app_data.get("lookback_days", 5)
+    lookback_days = st.slider("📅 設定要往前追蹤的交易天數", min_value=1, max_value=30, value=saved_lookback, key="matrix_slider")
+    
+    # 如果拉桿數值有變動，馬上存檔
+    if lookback_days != saved_lookback:
+        st.session_state.app_data["lookback_days"] = lookback_days
+        save_data(st.session_state.app_data)
+
 with col_check:
     st.markdown("<div style='margin-top: 35px;'></div>", unsafe_allow_html=True)
     only_show_held = st.checkbox("✅ 只顯示我持有的標的", value=True)
@@ -382,24 +392,20 @@ if not history_matrix.empty:
         actual_cols = filtered_matrix.shape[1]
         slice_days = min(lookback_days, actual_cols)
         
-        # 擷取最後天數，並進行倒序 (最新一天在最左邊，依序往右延伸)
         recent_history = filtered_matrix.iloc[:, -slice_days:]
         recent_history = recent_history.iloc[:, ::-1] 
         recent_history = recent_history.fillna("0.000,0.000") 
         
-        # 🚀 突破系統表格限制！改用原生 HTML 渲染，保證「%數在上、金額在下」且帶有流暢水平捲動軸！
-        # 另外加入 Sticky 屬性，這樣往右拉的時候，最左邊的「股票名稱」才不會消失！
+        # 🚀 HTML 渲染引擎
         html_code = '<div style="overflow-x: auto; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">'
         html_code += '<table style="width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; font-size: 14px; background-color: white;">'
         
-        # 標題列
         html_code += '<thead><tr style="background-color: #f8f9fa;">'
         html_code += '<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 140px; position: sticky; left: 0; background-color: #f8f9fa; z-index: 2;">📌 標的名稱</th>'
         for col in recent_history.columns:
             html_code += f'<th style="padding: 12px 10px; border: 1px solid #e9ecef; min-width: 110px;">{col}</th>'
         html_code += '</tr></thead><tbody>'
         
-        # 內容列
         for idx, row in recent_history.iterrows():
             html_code += f'<tr><td style="padding: 12px 10px; border: 1px solid #e9ecef; font-weight: bold; text-align: left; position: sticky; left: 0; background-color: white; z-index: 1;">{idx}</td>'
             for val in row:
@@ -420,8 +426,6 @@ if not history_matrix.empty:
             html_code += '</tr>'
             
         html_code += '</tbody></table></div>'
-        
-        # 將最終生成的表格用 Markdown 渲染出來
         st.markdown(html_code, unsafe_allow_html=True)
 else:
     st.info("💡 歷史資料正在對齊同步中，若未出現請點擊上方強制刷新按鈕。")
