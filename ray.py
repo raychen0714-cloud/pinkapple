@@ -8,6 +8,15 @@ import requests
 import urllib.parse
 import xml.etree.ElementTree as ET
 
+# ==========================================
+# 🚨🚨🚨 【雲端永久固定設定區】 🚨🚨🚨
+# 因為免費雲端主機會定時「刪除暫存檔」
+# 請直接在這裡修改您的「真實資料」，改完後存檔並上傳/更新您的 Python 檔！
+# ==========================================
+MY_TRUE_TOTAL_DIV = 155000.0  # 👈 1. 在這裡填入您的真實總配息金額 (不要有逗號)
+MY_TRUE_LOOKBACK_DAYS = 5     # 👈 2. 預設歷史矩陣看幾天
+MY_TRUE_HELD_STOCKS = ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW", "3481.TW"] # 👈 3. 在這裡填入您真正「持有」的代號，加在引號裡面，用逗號隔開
+
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
 
@@ -17,15 +26,10 @@ DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 def load_data():
     default_data = {
-        # 🚨🚨🚨 【徹底解決每天歸零方案】 🚨🚨🚨
-        # 請把下面的 0.0 直接改成您現在的「真實總配息金額」 (例如 155000.0)
-        "total_div": 0.0, 
-        
-        # 🔒 永久記憶您的「歷史追蹤天數」
-        "lookback_days": 5,
-        
-        "held_stocks": ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW"],
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770"
+        "total_div": MY_TRUE_TOTAL_DIV, 
+        "lookback_days": MY_TRUE_LOOKBACK_DAYS,
+        "held_stocks": MY_TRUE_HELD_STOCKS,
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770, 6209"
     }
     if os.path.exists(DATA_FILE):
         try:
@@ -157,7 +161,7 @@ with col_left:
 with col_right:
     st.markdown("#### 🏆 總領配息累計")
     st.markdown(f"<h1 style='color: #1e3c72; font-weight: 900; font-size: 48px;'>${st.session_state.app_data['total_div']:,.0f}</h1>", unsafe_allow_html=True)
-    with st.expander("🛠️ 手動校正總額"):
+    with st.expander("🛠️ 手動校正總額 (網頁重整後可能會流失，請修改程式碼最上方)"):
         correct_val = st.number_input("輸入正確總金額", value=int(st.session_state.app_data['total_div']), step=1000)
         if st.button("💾 覆寫總額", use_container_width=True):
             st.session_state.app_data["total_div"] = float(correct_val)
@@ -234,7 +238,7 @@ def fetch_and_analyze(manual_input):
             pct_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_pct.index], data=hist_pct.values)
             diff_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_diff.index], data=hist_diff.values)
             
-            # 🚀 官方 API 數據注入 (今天 6/25)
+            # 🚀 官方 API 數據注入 (今天)
             rt_info = realtime_data.get(ticker)
             today_str = today_date.strftime('%m/%d')
             
@@ -250,7 +254,7 @@ def fetch_and_analyze(manual_input):
                     # 抓出真正的「上一個工作日」
                     last_bday = pd.bdate_range(end=today_date - pd.Timedelta(days=1), periods=1)[0].date()
                     
-                    # 如果 Yahoo 最新的資料比上一個工作日還舊 (代表 ETF 漏更新了 6/24)
+                    # 如果 Yahoo 最新的資料比上一個工作日還舊 (代表 ETF 漏更新)
                     if last_yahoo_date < last_bday:
                         last_yahoo_close = hist['Close'].iloc[-1]
                         # 直接用證交所的昨日收盤價，推算出漏掉的那一天！
@@ -334,11 +338,11 @@ if final_data.empty:
     st.warning("⚠️ 系統目前無法取得報價資料，請確認代號是否輸入正確。")
 else:
     held_list = st.session_state.app_data.get("held_stocks", [])
-    final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
+    final_data['📌 持持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
-    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
+    display_df = final_data[['📌 持持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
+    display_df = display_df.sort_values(by=["📌 持持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
         if isinstance(val, str):
@@ -357,7 +361,7 @@ else:
         height=dynamic_height, 
         disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局", "消息面", "📰 最新新聞"], 
         column_config={
-            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
+            "📌 持持有": st.column_config.CheckboxColumn("📌 持有", width=60),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=130), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
@@ -373,7 +377,7 @@ else:
     current_held = st.session_state.app_data.get("held_stocks", [])
     for i in range(len(display_df)):
         ticker_key = display_df.iloc[i]['原始代號']
-        old_held, new_held = bool(display_df.iloc[i]['📌 持有']), bool(edited_df.iloc[i]['📌 持有'])
+        old_held, new_held = bool(display_df.iloc[i]['📌 持持有']), bool(edited_df.iloc[i]['📌 持持有'])
         if old_held != new_held:
             if new_held and (ticker_key not in current_held): current_held.append(ticker_key)
             elif (not new_held) and (ticker_key in current_held): current_held.remove(ticker_key)
@@ -404,7 +408,7 @@ with col_check:
 
 if not history_matrix.empty:
     if only_show_held and not final_data.empty:
-        held_targets = final_data[final_data['📌 持有'] == True]['標的'].tolist()
+        held_targets = final_data[final_data['📌 持持有'] == True]['標的'].tolist()
         filtered_matrix = history_matrix[history_matrix.index.isin(held_targets)]
     else:
         filtered_matrix = history_matrix
