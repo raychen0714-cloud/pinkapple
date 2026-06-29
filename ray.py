@@ -13,9 +13,9 @@ import xml.etree.ElementTree as ET
 # 因為免費雲端主機會定時「刪除暫存檔」
 # 請直接在這裡修改您的「真實資料」，改完後存檔並上傳/更新您的 Python 檔！
 # ==========================================
-MY_TRUE_TOTAL_DIV = 155000.0  # 👈 1. 在這裡填入您的真實總配息金額 (不要有逗號)
+MY_TRUE_TOTAL_DIV = 0.0  # 👈 1. 在這裡填入您的真實總配息金額 (例如 155000.0)
 MY_TRUE_LOOKBACK_DAYS = 5     # 👈 2. 預設歷史矩陣看幾天
-MY_TRUE_HELD_STOCKS = ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW", "3481.TW"] # 👈 3. 在這裡填入您真正「持有」的代號，加在引號裡面，用逗號隔開
+MY_TRUE_HELD_STOCKS = ["00878.TW", "0056.TW", "00927.TW", "00905.TW", "00919.TW", "00918.TW", "3481.TW"] # 👈 3. 填入您真正「持有」的代號
 
 # --- ⚙️ 頁面與效能設定 ---
 st.set_page_config(page_title="PRO 級存股戰情室", layout="wide")
@@ -248,16 +248,13 @@ def fetch_and_analyze(manual_input):
                 pct_series[today_str] = live_pct
                 diff_series[today_str] = live_diff
                 
-                # 🚀 終極修復：Yahoo ETF 延遲 Bug 智能補丁 (修復 6/24 都是 0 的問題)
+                # 🚀 終極修復：Yahoo ETF 延遲 Bug 智能補丁
                 if not hist.empty:
                     last_yahoo_date = hist.index[-1]
-                    # 抓出真正的「上一個工作日」
                     last_bday = pd.bdate_range(end=today_date - pd.Timedelta(days=1), periods=1)[0].date()
                     
-                    # 如果 Yahoo 最新的資料比上一個工作日還舊 (代表 ETF 漏更新)
                     if last_yahoo_date < last_bday:
                         last_yahoo_close = hist['Close'].iloc[-1]
-                        # 直接用證交所的昨日收盤價，推算出漏掉的那一天！
                         missed_diff = rt_info['prev_close'] - last_yahoo_close
                         missed_pct = (missed_diff / last_yahoo_close) * 100
                         
@@ -312,7 +309,6 @@ def fetch_and_analyze(manual_input):
     hist_df = pd.DataFrame(all_hist_pct)
     if not hist_df.empty:
         hist_df = hist_df.dropna(how='all')
-        # 🚀 改為 NaN,NaN 以便後續精準判斷是 0.00% 還是「待更新」
         hist_df = hist_df.fillna("NaN,NaN")
         hist_df.sort_index(ascending=True, inplace=True)
         hist_matrix = hist_df.T 
@@ -338,11 +334,11 @@ if final_data.empty:
     st.warning("⚠️ 系統目前無法取得報價資料，請確認代號是否輸入正確。")
 else:
     held_list = st.session_state.app_data.get("held_stocks", [])
-    final_data['📌 持持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
+    final_data['📌 持有'] = final_data['原始代號'].apply(lambda x: x in held_list)
     final_data['標的'] = final_data['代號'].astype(str) + " " + final_data['名稱']
     
-    display_df = final_data[['📌 持持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
-    display_df = display_df.sort_values(by=["📌 持持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
+    display_df = final_data[['📌 持有', '原始代號', '標的', '現價', '📈 漲跌', '成交量(張)', '趨勢格局', '消息面', '📰 最新新聞']]
+    display_df = display_df.sort_values(by=["📌 持有", "成交量(張)"], ascending=[False, False]).reset_index(drop=True)
     
     def color_tw_stock(val):
         if isinstance(val, str):
@@ -361,7 +357,7 @@ else:
         height=dynamic_height, 
         disabled=["標的", "現價", "📈 漲跌", "成交量(張)", "趨勢格局", "消息面", "📰 最新新聞"], 
         column_config={
-            "📌 持持有": st.column_config.CheckboxColumn("📌 持有", width=60),
+            "📌 持有": st.column_config.CheckboxColumn("📌 持有", width=60),
             "原始代號": None, 
             "標的": st.column_config.TextColumn("標的", width=130), 
             "現價": st.column_config.NumberColumn("現價", format="$%.2f", width=70),
@@ -377,7 +373,7 @@ else:
     current_held = st.session_state.app_data.get("held_stocks", [])
     for i in range(len(display_df)):
         ticker_key = display_df.iloc[i]['原始代號']
-        old_held, new_held = bool(display_df.iloc[i]['📌 持持有']), bool(edited_df.iloc[i]['📌 持持有'])
+        old_held, new_held = bool(display_df.iloc[i]['📌 持有']), bool(edited_df.iloc[i]['📌 持有'])
         if old_held != new_held:
             if new_held and (ticker_key not in current_held): current_held.append(ticker_key)
             elif (not new_held) and (ticker_key in current_held): current_held.remove(ticker_key)
@@ -389,9 +385,61 @@ else:
         st.rerun()
 
 # ==========================================
-# 【下方面板】歷史區間漲跌幅矩陣 (✨ ETF 漏接資料完美還原版)
+# 【新增功能】PRO 級年度波動大事件與避險戰情窗 (貼在這裡)
 # ==========================================
 st.markdown("---")
+# 這裡使用 popover 來建立隱藏式按鈕，點擊才會彈出，不佔用版面！
+with st.popover("🚨 檢視每年的重要避險與波動大事件月份", use_container_width=True):
+    st.markdown("### 📅 台股科技鏈年度高波動避險行事曆")
+    st.caption("根據晶圓代工、記憶體巨頭財報週期與本土籌碼面資金流動編制")
+    
+    selected_period = st.selectbox(
+        "🔍 請選擇欲警戒的風險區間 / 事件類別",
+        [
+            "全部關鍵月份總覽",
+            "04月：Q1季報大考驗 (台積電/美光關鍵期)",
+            "05月：台灣報稅季 (大股東提款變現期)",
+            "07-08月：除權息與半年報大洗牌",
+            "10月：Q3財報與傳統美股修正潮"
+        ]
+    )
+    st.markdown("---")
+    
+    if selected_period == "全部關鍵月份總覽" or "04月" in selected_period:
+        st.markdown("#### 📌 04 月：超級財報與半導體風向球")
+        st.markdown("""
+        * **核心大事件：** 晶圓代工龍頭（台積電）法說會定調年度展望、美光公布新財報、美股科技超級財報週開跑。
+        * **供應鏈衝擊：** 第一季淡季剛過，市場會用放大鏡檢視**記憶體價格增幅**與**晶圓代工產能利用率**是否符合預期。若展望稍有雜音，高基期個股極易出現崩跌。
+        * **🛡️ PRO級避險策略：** 針對非核心持股、高乖離率的投機標的進行季底獲利了結；增持現金或佈局指數反向避險工具（如認售權證）。
+        """)
+        
+    if selected_period == "全部關鍵月份總覽" or "05月" in selected_period:
+        st.markdown("#### 📌 05 月：本土報稅季與傳統五月賣壓 (Sell in May)")
+        st.markdown("""
+        * **核心大事件：** 台灣個人所得稅申報。大股東、董事、市場大戶為了籌措龐大稅金，具有強烈的**拋售股票變現需求**。
+        * **供應鏈衝擊：** 屬於純粹的「籌碼面資金抽離」，與基本面無關，但容易造成中小型科技股（如記憶體模組廠、IC設計）無預警修正。
+        * **🛡️ PRO級避險策略：** 避開融資餘額過高、籌碼凌亂的個股。此月份適合反向鎖定基本面極佳、卻因報稅賣壓被冤枉殺低的優質晶圓代工核心鏈，作為分批定額加碼點。
+        """)
+        
+    if selected_period == "全部關鍵月份總覽" or "07-08月" in selected_period:
+        st.markdown("#### 📌 07 - 08 月：除權息旺季與半年報大考驗")
+        st.markdown("""
+        * **核心大事件：** 台股除權息高峰期（大盤點數技術性蒸發）、8/14 前必須強制公佈的**半年報大考驗**。
+        * **供應鏈衝擊：** 點數技術性蒸發容易引發散戶心理恐慌。更重要的是，半年報會戳破上半年「純靠題材炒作」的投機股泡沫，資金會大規模回流到有實質 EPS 的台積電、日月光等護國大軍。
+        * **🛡️ PRO級避險策略：** 嚴格執行汰弱留強。利用除權息後的「技術性低價」專注填息能力強的高股息半導體收益標的，切忌追逐無獲利支撐的题材股。
+        """)
+        
+    if selected_period == "全部關鍵月份總覽" or "10月" in selected_period:
+        st.markdown("#### 📌 10 月：第三季財報與全球資金結帳潮")
+        st.markdown("""
+        * **核心大事件：** 科技供應鏈進入 Q3 財報結算、美股歷史上波動最高發的「十月效應」、晶圓代工與記憶體巨頭釋出翌年產業初評。
+        * **供應鏈衝擊：** 進入第四季，法人與外資開始進行年度績效鎖定，若此時全球經貿或地緣政治有變數，外資會優先將台股等新興市場權值股視為「ATM」提款避險。
+        * **🛡️ PRO級避險策略：** 提高資產配置的防禦防護。將部分資金轉入波動度較低、具有穩定配息支撐的防禦型 ETF，並利用期貨或選擇權鎖定大盤下行風險。
+        """)
+
+# ==========================================
+# 【下方面板】歷史區間漲跌幅矩陣 (✨ ETF 漏接資料完美還原版)
+# ==========================================
 st.subheader("📉 歷史漲跌幅追蹤矩陣 (自訂天數)")
 
 col_slider, col_check = st.columns([3, 1])
@@ -408,7 +456,7 @@ with col_check:
 
 if not history_matrix.empty:
     if only_show_held and not final_data.empty:
-        held_targets = final_data[final_data['📌 持持有'] == True]['標的'].tolist()
+        held_targets = final_data[final_data['📌 持有'] == True]['標的'].tolist()
         filtered_matrix = history_matrix[history_matrix.index.isin(held_targets)]
     else:
         filtered_matrix = history_matrix
@@ -434,7 +482,6 @@ if not history_matrix.empty:
         for idx, row in recent_history.iterrows():
             html_code += f'<tr><td style="padding: 12px 10px; border: 1px solid #e9ecef; font-weight: bold; text-align: left; position: sticky; left: 0; background-color: white; z-index: 1;">{idx}</td>'
             for val in row:
-                # 🚀 誠實顯示：如果 Yahoo 真的是連舊資料都漏給，就顯示「待更新」，不再顯示假 0.00%！
                 if pd.isna(val) or val == "NaN,NaN": 
                     html_code += '<td style="padding: 10px; border: 1px solid #e9ecef; color: #a0a0a0; line-height: 1.6;">⏳ 待更新<br><span style="font-size: 0.8em;">(Yahoo延遲)</span></td>'
                 elif val == "0.000,0.000":
