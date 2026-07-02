@@ -29,7 +29,7 @@ def load_data():
         "total_div": MY_TRUE_TOTAL_DIV, 
         "lookback_days": MY_TRUE_LOOKBACK_DAYS,
         "held_stocks": MY_TRUE_HELD_STOCKS,
-        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770, 6209"
+        "manual_tickers": "878, 919, 918, 0056, 927, 0052, 2409, 6116, 3481, 00905, 2330, 2303, 2454, 00403A, 2327, 3711, 6742, 6770, 6209, 888"
     }
     if os.path.exists(DATA_FILE):
         try:
@@ -54,7 +54,7 @@ def save_data(data):
 if 'app_data' not in st.session_state:
     st.session_state.app_data = load_data()
 
-# --- 📘 字典區 ---
+# --- 📘 字典區 (新增了 00888 等熱門標的) ---
 CUSTOM_NAME_MAP = {
     "2330.TW": "台積電", "2303.TW": "聯電", "2454.TW": "聯發科", "2317.TW": "鴻海",
     "2327.TW": "國巨", "3711.TW": "日月光投控", "6742.TW": "澤米", "6770.TW": "力積電",
@@ -64,7 +64,8 @@ CUSTOM_NAME_MAP = {
     "00878.TW": "國泰永續高股息", "00919.TW": "群益精選高息", "00929.TW": "復華台灣科技優息",
     "00713.TW": "元大台灣高息低波", "00915.TW": "凱基優選高股息", "00918.TW": "大華優利高填息",
     "00927.TW": "群益半導體收益", "00939.TW": "統一台灣高息動能", "00940.TW": "元大台灣價值高息",
-    "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50", "6209.TW": "今國光"
+    "00905.TW": "FT台灣Smart", "00403A.TW": "主動統一升級50", "6209.TW": "今國光",
+    "00888.TW": "永豐台灣ESG", "00881.TW": "國泰台灣5G+", "00733.TW": "富邦台灣中小"
 }
 
 # --- ⚙️ Pandas 顯色引擎相容包 ---
@@ -217,29 +218,39 @@ def fetch_and_analyze(manual_input):
                 hist = tk.history(period="1mo", auto_adjust=True)
                 if not hist.empty: ticker = ticker_two 
                     
-            if hist.empty or len(hist) < 2: continue
-            
-            # 過濾掉 Yahoo 常見的 0 交易量假資料
-            hist = hist[hist['Volume'] > 0]
-            
-            # 轉換為純日期
-            if hist.index.tz is None:
-                hist.index = hist.index.tz_localize('UTC')
-            hist.index = hist.index.tz_convert('Asia/Taipei').date
-            hist = hist.loc[~hist.index.duplicated(keep='last')]
-            
-            # 物理切割：強制砍掉「今天」的歷史數據
-            hist = hist[hist.index < today_date]
-            hist = hist.sort_index()
+            # 🚀 取得即時資料 (官方 API)
+            rt_info = realtime_data.get(ticker)
 
-            hist_pct = hist['Close'].pct_change() * 100
-            hist_diff = hist['Close'].diff()
+            # 🚨 防呆：如果沒有歷史資料，也沒有即時資料，才真的跳過。
+            if (hist.empty or len(hist) < 2) and not rt_info: 
+                continue
             
-            pct_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_pct.index], data=hist_pct.values)
-            diff_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_diff.index], data=hist_diff.values)
+            # 🚨 只有在有歷史資料時才進行日期切割與計算
+            if not hist.empty and len(hist) >= 2:
+                # 過濾掉 Yahoo 常見的 0 交易量假資料
+                hist = hist[hist['Volume'] > 0]
+                
+                # 轉換為純日期
+                if hist.index.tz is None:
+                    hist.index = hist.index.tz_localize('UTC')
+                hist.index = hist.index.tz_convert('Asia/Taipei').date
+                hist = hist.loc[~hist.index.duplicated(keep='last')]
+                
+                # 物理切割：強制砍掉「今天」的歷史數據
+                hist = hist[hist.index < today_date]
+                hist = hist.sort_index()
+
+                hist_pct = hist['Close'].pct_change() * 100
+                hist_diff = hist['Close'].diff()
+                
+                pct_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_pct.index], data=hist_pct.values)
+                diff_series = pd.Series(index=[d.strftime('%m/%d') for d in hist_diff.index], data=hist_diff.values)
+            else:
+                # 建立空的 Series 防呆
+                pct_series = pd.Series(dtype=float)
+                diff_series = pd.Series(dtype=float)
             
             # 🚀 官方 API 數據注入 (今天)
-            rt_info = realtime_data.get(ticker)
             today_str = today_date.strftime('%m/%d')
             
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
@@ -267,14 +278,19 @@ def fetch_and_analyze(manual_input):
             all_hist_pct[display_name] = combined_series
 
             sentiment, latest_title = fetch_news_and_sentiment(name)
+            
+            # 🚨 修正：安全地取得價格，防止歷史資料為空時的報錯
             if rt_info and rt_info['prev_close'] > 0 and rt_info['price'] > 0:
                 close_px = rt_info['price']
                 prev_close = rt_info['prev_close']
                 vol = rt_info['vol']
             else:
-                close_px = float(hist['Close'].iloc[-1])
-                prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close_px
-                vol = float(hist['Volume'].iloc[-1]) / 1000
+                if not hist.empty:
+                    close_px = float(hist['Close'].iloc[-1])
+                    prev_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else close_px
+                    vol = float(hist['Volume'].iloc[-1]) / 1000
+                else:
+                    close_px, prev_close, vol = 0.0, 0.0, 0.0
                 
             price_change_abs = close_px - prev_close 
             price_change_pct = (price_change_abs / prev_close) * 100 if prev_close > 0 else 0
@@ -283,11 +299,15 @@ def fetch_and_analyze(manual_input):
             elif price_change_abs < 0: change_str = f"🔻 {price_change_pct:.2f}% / {price_change_abs:.2f}元"
             else: change_str = "➖ 0.00% / 0.00元"
 
-            ma5 = float(hist['Close'].tail(5).mean())   
-            ma20 = float(hist['Close'].tail(20).mean())  
-            if close_px > ma5 and close_px > ma20: trend_status = "🔥 偏多" 
-            elif close_px < ma5 and close_px < ma20: trend_status = "🧊 偏空" 
-            else: trend_status = "➖ 整理" 
+            # 🚨 修正：只有在有歷史資料時才計算 MA
+            if not hist.empty and len(hist) >= 20:
+                ma5 = float(hist['Close'].tail(5).mean())   
+                ma20 = float(hist['Close'].tail(20).mean())  
+                if close_px > ma5 and close_px > ma20: trend_status = "🔥 偏多" 
+                elif close_px < ma5 and close_px < ma20: trend_status = "🧊 偏空" 
+                else: trend_status = "➖ 整理" 
+            else:
+                trend_status = "➖ 整理 (待補數據)"
 
             results.append({
                 "原始代號": ticker,  
